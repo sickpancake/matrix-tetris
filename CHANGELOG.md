@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.0
+
+- Added automatic saved-game resume for unfinished games.
+- Added visible version information, About, first-run setup, and in-app What's New.
+- Added local stats for games played, best score, best lines, total lines, line-clear events, total play time, and last played.
+- Improved game-over and restart flow with a Matrix-styled result panel.
+- Added a GitHub Releases update button and clearer install/update packaging.
+- Updated app bundle version to `1.0.0` / build `100`.
+
 ## v0.2
 
 - Improved gameplay timing with a 60 Hz loop, catch-up gravity, and more responsive held-key repeat.

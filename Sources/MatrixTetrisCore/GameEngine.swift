@@ -11,9 +11,11 @@ public final class GameEngine {
     public private(set) var score = 0
     public private(set) var level = 1
     public private(set) var linesCleared = 0
+    public private(set) var lineClearEvents = 0
     public private(set) var status: GameStatus = .running
     public private(set) var spawnSerial = 0
     public private(set) var lastClearedRows: [Int] = []
+    public private(set) var startedAt = Date()
 
     private var rng: SeededGenerator
     private var bag: [TetrominoKind] = []
@@ -50,12 +52,61 @@ public final class GameEngine {
         score = 0
         level = 1
         linesCleared = 0
+        lineClearEvents = 0
         lockTicks = 0
         spawnSerial = 0
         lastClearedRows = []
+        startedAt = Date()
         status = .running
         refillQueueIfNeeded()
         spawnPiece()
+    }
+
+    public func startNewGame(seed: UInt64? = nil) {
+        reset(seed: seed)
+    }
+
+    public func snapshot() -> GameSnapshot {
+        GameSnapshot(
+            width: width,
+            height: height,
+            board: board,
+            activePiece: activePiece,
+            nextQueue: nextQueue,
+            bag: bag,
+            score: score,
+            level: level,
+            linesCleared: linesCleared,
+            lineClearEvents: lineClearEvents,
+            status: status,
+            spawnSerial: spawnSerial,
+            lockTicks: lockTicks,
+            rngState: rng.currentState,
+            startedAt: startedAt
+        )
+    }
+
+    @discardableResult
+    public func restore(from snapshot: GameSnapshot) -> Bool {
+        guard snapshot.width == width, snapshot.height == height else { return false }
+        guard snapshot.board.count == height else { return false }
+        guard snapshot.board.allSatisfy({ $0.count == width }) else { return false }
+
+        board = snapshot.board
+        activePiece = snapshot.activePiece
+        nextQueue = snapshot.nextQueue
+        bag = snapshot.bag
+        score = max(0, snapshot.score)
+        level = max(1, snapshot.level)
+        linesCleared = max(0, snapshot.linesCleared)
+        lineClearEvents = max(0, snapshot.lineClearEvents)
+        status = snapshot.status
+        spawnSerial = max(0, snapshot.spawnSerial)
+        lockTicks = min(max(0, snapshot.lockTicks), lockDelayTicks)
+        rng = SeededGenerator(restoringState: snapshot.rngState)
+        startedAt = snapshot.startedAt
+        lastClearedRows = []
+        return true
     }
 
     public func togglePause() {
@@ -243,6 +294,9 @@ public final class GameEngine {
         lockTicks = 0
         lastClearedRows = []
         let cleared = clearCompleteLines()
+        if cleared > 0 {
+            lineClearEvents += 1
+        }
         applyScore(forClearedLineCount: cleared)
         spawnPiece()
     }

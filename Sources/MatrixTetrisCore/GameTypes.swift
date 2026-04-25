@@ -53,10 +53,66 @@ public struct ActivePiece: Equatable, Codable, Sendable {
     }
 }
 
-public enum GameStatus: Equatable, Sendable {
+public enum GameStatus: String, Codable, Equatable, Sendable {
     case running
     case paused
     case gameOver
+}
+
+public struct GameSnapshot: Codable, Equatable, Sendable {
+    public var width: Int
+    public var height: Int
+    public var board: [[TetrominoKind?]]
+    public var activePiece: ActivePiece?
+    public var nextQueue: [TetrominoKind]
+    public var bag: [TetrominoKind]
+    public var score: Int
+    public var level: Int
+    public var linesCleared: Int
+    public var lineClearEvents: Int
+    public var status: GameStatus
+    public var spawnSerial: Int
+    public var lockTicks: Int
+    public var rngState: UInt64
+    public var startedAt: Date
+
+    public init(
+        width: Int,
+        height: Int,
+        board: [[TetrominoKind?]],
+        activePiece: ActivePiece?,
+        nextQueue: [TetrominoKind],
+        bag: [TetrominoKind],
+        score: Int,
+        level: Int,
+        linesCleared: Int,
+        lineClearEvents: Int,
+        status: GameStatus,
+        spawnSerial: Int,
+        lockTicks: Int,
+        rngState: UInt64,
+        startedAt: Date
+    ) {
+        self.width = width
+        self.height = height
+        self.board = board
+        self.activePiece = activePiece
+        self.nextQueue = nextQueue
+        self.bag = bag
+        self.score = score
+        self.level = level
+        self.linesCleared = linesCleared
+        self.lineClearEvents = lineClearEvents
+        self.status = status
+        self.spawnSerial = spawnSerial
+        self.lockTicks = lockTicks
+        self.rngState = rngState
+        self.startedAt = startedAt
+    }
+
+    public var isRestorableSession: Bool {
+        status != .gameOver
+    }
 }
 
 public enum GameAction: String, CaseIterable, Codable, Sendable {

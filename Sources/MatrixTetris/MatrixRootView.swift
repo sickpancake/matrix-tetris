@@ -4,6 +4,9 @@ import MatrixTetrisCore
 final class MatrixRootView: NSView {
     private let engine = GameEngine()
     private let settingsStore: SettingsStore
+    private let savedGameStore = SavedGameStore()
+    private let statsStore = StatsStore()
+    private let appMetaStore = AppMetaStore()
     private let onSettingsChanged: (SettingsState) -> Void
     private let onClose: () -> Void
     private let onQuit: () -> Void
@@ -15,7 +18,8 @@ final class MatrixRootView: NSView {
     private let levelLabel = NSTextField(labelWithString: "")
     private let linesLabel = NSTextField(labelWithString: "")
     private let stateLabel = NSTextField(labelWithString: "")
-    private let settingsScrollView = NSScrollView()
+    private let detailScrollView = NSScrollView()
+    private let gameOverSlot = NSStackView()
     private lazy var settingsView = SettingsView(settings: settings) { [weak self] settings in
         self?.applySettings(settings)
     }
@@ -29,6 +33,11 @@ final class MatrixRootView: NSView {
     private var resumeAfterSettingsClose = false
     private var holdShortcutIsActive = false
     private var lastSpawnSerial = 0
+    private var statsRecordedForGame = false
+    private var detailMode: DetailMode?
+    private var stats = StatsState.defaultState()
+    private var meta = AppMetaState.defaultState()
+    private var gameOverPanel: MatrixInfoPanel?
 
     private(set) var settings: SettingsState
     var isCapturingSettingsInput: Bool { settingsView.isCapturing }
@@ -44,13 +53,19 @@ final class MatrixRootView: NSView {
         self.onClose = onClose
         self.onQuit = onQuit
         settings = settingsStore.load()
+        stats = statsStore.load()
+        meta = appMetaStore.load()
         boardView = TetrisBoardView(engine: engine)
         nextPieceView = NextPieceView(engine: engine)
         super.init(frame: .zero)
+        if let snapshot = savedGameStore.load(), !engine.restore(from: snapshot) {
+            savedGameStore.clear()
+        }
         buildInterface()
         boardView.animationMode = settings.animationMode
         lastSpawnSerial = engine.spawnSerial
         updateLabels()
+        showStartupPanelsIfNeeded()
     }
 
     required init?(coder: NSCoder) {
@@ -76,11 +91,16 @@ final class MatrixRootView: NSView {
     }
 
     func suspendRendering() {
+        persistSessionIfNeeded()
         timer?.invalidate()
         timer = nil
         heldActions.removeAll()
         repeatStates.removeAll()
         lastFrameTime = Date()
+    }
+
+    func saveBeforeTerminate() {
+        persistSessionIfNeeded()
     }
 
     func setHoldShortcutActive(_ active: Bool) {
@@ -93,6 +113,11 @@ final class MatrixRootView: NSView {
     override func keyDown(with event: NSEvent) {
         if settingsView.isCapturing {
             settingsView.capture(event: event)
+            return
+        }
+
+        guard detailMode == nil else {
+            super.keyDown(with: event)
             return
         }
 
@@ -166,6 +191,15 @@ final class MatrixRootView: NSView {
         controls.addArrangedSubview(button("Settings", action: #selector(settingsPressed)))
         sidebar.addArrangedSubview(controls)
 
+        let infoControls = NSStackView()
+        infoControls.orientation = .horizontal
+        infoControls.spacing = 8
+        infoControls.addArrangedSubview(button("Stats", action: #selector(statsPressed)))
+        infoControls.addArrangedSubview(button("About", action: #selector(aboutPressed)))
+        sidebar.addArrangedSubview(infoControls)
+
+        sidebar.addArrangedSubview(button("What's New", action: #selector(changelogPressed)))
+
         let closeControls = NSStackView()
         closeControls.orientation = .horizontal
         closeControls.spacing = 8
@@ -173,16 +207,22 @@ final class MatrixRootView: NSView {
         closeControls.addArrangedSubview(button("Quit", action: #selector(quitPressed)))
         sidebar.addArrangedSubview(closeControls)
 
+        gameOverSlot.orientation = .vertical
+        gameOverSlot.alignment = .leading
+        gameOverSlot.spacing = 0
+        gameOverSlot.isHidden = true
+        sidebar.addArrangedSubview(gameOverSlot)
+
         settingsView.frame = NSRect(x: 0, y: 0, width: 188, height: 560)
-        settingsScrollView.documentView = settingsView
-        settingsScrollView.drawsBackground = false
-        settingsScrollView.hasVerticalScroller = true
-        settingsScrollView.borderType = .noBorder
-        settingsScrollView.translatesAutoresizingMaskIntoConstraints = false
-        settingsScrollView.isHidden = true
-        sidebar.addArrangedSubview(settingsScrollView)
-        settingsScrollView.widthAnchor.constraint(equalToConstant: 196).isActive = true
-        settingsScrollView.heightAnchor.constraint(equalToConstant: 216).isActive = true
+        detailScrollView.documentView = settingsView
+        detailScrollView.drawsBackground = false
+        detailScrollView.hasVerticalScroller = true
+        detailScrollView.borderType = .noBorder
+        detailScrollView.translatesAutoresizingMaskIntoConstraints = false
+        detailScrollView.isHidden = true
+        sidebar.addArrangedSubview(detailScrollView)
+        detailScrollView.widthAnchor.constraint(equalToConstant: 196).isActive = true
+        detailScrollView.heightAnchor.constraint(equalToConstant: 216).isActive = true
 
         let mainStack = NSStackView(views: [boardView, sidebar])
         mainStack.orientation = .horizontal
@@ -229,18 +269,25 @@ final class MatrixRootView: NSView {
                     previousLines: previousLines,
                     previousSpawnSerial: previousSpawnSerial
                 )
+                gameChanged = finalizeGameIfNeeded() || gameChanged
                 gravitySteps += 1
             }
         }
 
         gameChanged = updateHighScoreIfNeeded() || gameChanged
+        gameChanged = finalizeGameIfNeeded() || gameChanged
         if gameChanged {
+            persistSessionIfNeeded()
             updateLabels()
+            refreshStatsDetailIfVisible()
             boardView.needsDisplay = true
             nextPieceView.needsDisplay = true
         }
 
         renderTick += 1
+        if detailMode == .stats && renderTick % 30 == 0 {
+            refreshStatsDetailIfVisible()
+        }
         if renderTick % 3 == 0 {
             boardView.advanceRain()
         }
@@ -278,8 +325,7 @@ final class MatrixRootView: NSView {
             engine.togglePause()
             changed = true
         case .restart:
-            engine.reset()
-            gravityAccumulator = 0
+            startNewGame()
             changed = true
         }
 
@@ -291,8 +337,12 @@ final class MatrixRootView: NSView {
         )
 
         guard refresh else { return changed }
-        if updateHighScoreIfNeeded() || changed {
+        let scoreChanged = updateHighScoreIfNeeded()
+        let gameEnded = finalizeGameIfNeeded()
+        if scoreChanged || gameEnded || changed {
+            persistSessionIfNeeded()
             updateLabels()
+            refreshStatsDetailIfVisible()
             boardView.needsDisplay = true
             nextPieceView.needsDisplay = true
         }
@@ -305,9 +355,47 @@ final class MatrixRootView: NSView {
         settingsView.settings = settings
         boardView.animationMode = settings.animationMode
         onSettingsChanged(settings)
-        if settingsScrollView.isHidden && !settingsView.isCapturing {
+        if detailScrollView.isHidden && !settingsView.isCapturing {
             focusGame()
         }
+    }
+
+    private func startNewGame() {
+        _ = finalizeGameIfNeeded()
+        engine.startNewGame()
+        gravityAccumulator = 0
+        statsRecordedForGame = false
+        savedGameStore.clear()
+        persistSessionIfNeeded()
+        rebuildGameOverPanel()
+    }
+
+    private func persistSessionIfNeeded() {
+        if engine.status == .gameOver {
+            _ = finalizeGameIfNeeded()
+            savedGameStore.clear()
+        } else {
+            var snapshot = engine.snapshot()
+            if detailMode != nil && resumeAfterSettingsClose {
+                snapshot.status = .running
+            }
+            savedGameStore.save(snapshot)
+        }
+    }
+
+    @discardableResult
+    private func finalizeGameIfNeeded() -> Bool {
+        guard engine.status == .gameOver, !statsRecordedForGame else { return false }
+        stats = statsStore.recordGame(
+            score: engine.score,
+            lines: engine.linesCleared,
+            lineClearEvents: engine.lineClearEvents,
+            duration: Date().timeIntervalSince(engine.startedAt)
+        )
+        savedGameStore.clear()
+        statsRecordedForGame = true
+        rebuildGameOverPanel()
+        return true
     }
 
     private func clearHeldInput() {
@@ -388,6 +476,25 @@ final class MatrixRootView: NSView {
         levelLabel.stringValue = "Level: \(engine.level)"
         linesLabel.stringValue = "Lines: \(engine.linesCleared)"
         stateLabel.stringValue = stateText
+        rebuildGameOverPanel()
+    }
+
+    private func refreshStatsDetailIfVisible() {
+        guard detailMode == .stats else { return }
+        setDetailDocumentView(detailView(for: .stats), scrollToTop: false)
+    }
+
+    private func setDetailDocumentView(_ view: NSView, scrollToTop: Bool) {
+        detailScrollView.documentView = view
+        guard scrollToTop else { return }
+
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view, self.detailScrollView.documentView === view else { return }
+            let clipHeight = self.detailScrollView.contentView.bounds.height
+            let topY = view.isFlipped ? 0 : max(0, view.bounds.height - clipHeight)
+            self.detailScrollView.contentView.scroll(to: NSPoint(x: 0, y: topY))
+            self.detailScrollView.reflectScrolledClipView(self.detailScrollView.contentView)
+        }
     }
 
     private var stateText: String {
@@ -401,38 +508,246 @@ final class MatrixRootView: NSView {
         }
     }
 
+    private func rebuildGameOverPanel() {
+        guard engine.status == .gameOver else {
+            gameOverSlot.isHidden = true
+            if let gameOverPanel {
+                gameOverSlot.removeArrangedSubview(gameOverPanel)
+                gameOverPanel.removeFromSuperview()
+            }
+            gameOverPanel = nil
+            return
+        }
+
+        if let gameOverPanel {
+            gameOverSlot.removeArrangedSubview(gameOverPanel)
+            gameOverPanel.removeFromSuperview()
+        }
+        let panel = MatrixInfoPanel(
+            title: "GAME OVER",
+            lines: [
+                "Score: \(engine.score)",
+                "High: \(max(settings.highScore, engine.score))",
+                "Lines: \(engine.linesCleared)",
+                "Level: \(engine.level)"
+            ],
+            buttons: [
+                ("Restart", { [weak self] in self?.restartPressed() }),
+                ("Stats", { [weak self] in self?.showDetail(.stats) }),
+                ("Settings", { [weak self] in self?.showDetail(.settings) }),
+                ("Close", { [weak self] in self?.closePressed() })
+            ]
+        )
+        gameOverPanel = panel
+        gameOverSlot.addArrangedSubview(panel)
+        gameOverSlot.isHidden = false
+    }
+
+    private func showStartupPanelsIfNeeded() {
+        if !meta.firstRunCompleted {
+            meta = appMetaStore.completeFirstRun()
+            showDetail(.firstRun)
+            return
+        }
+        if meta.lastChangelogVersionShown != AppInfo.version {
+            meta = appMetaStore.markChangelogShown()
+            showDetail(.changelog)
+        }
+    }
+
+    private func showDetail(_ mode: DetailMode) {
+        if detailMode == nil {
+            resumeAfterSettingsClose = engine.status == .running
+            engine.pause()
+            clearHeldInput()
+        }
+
+        detailMode = mode
+        setDetailDocumentView(detailView(for: mode), scrollToTop: true)
+        detailScrollView.isHidden = false
+        updateLabels()
+        boardView.needsDisplay = true
+        nextPieceView.needsDisplay = true
+
+        if mode == .settings {
+            window?.makeFirstResponder(settingsView)
+        }
+    }
+
+    private func hideDetail(markChangelogSeen: Bool = false) {
+        if markChangelogSeen {
+            meta = appMetaStore.markChangelogShown()
+        }
+
+        detailMode = nil
+        detailScrollView.isHidden = true
+        setDetailDocumentView(settingsView, scrollToTop: true)
+
+        if resumeAfterSettingsClose {
+            engine.resume()
+        }
+        resumeAfterSettingsClose = false
+        updateLabels()
+        focusGame()
+    }
+
+    private func detailView(for mode: DetailMode) -> NSView {
+        switch mode {
+        case .settings:
+            settingsView.frame = NSRect(x: 0, y: 0, width: 188, height: 610)
+            return settingsView
+        case .firstRun:
+            return MatrixInfoPanel(
+                title: "FIRST RUN",
+                lines: [
+                    "Toggle: \(settings.hotKey.displayName)",
+                    "Hold: \(settings.holdHotKey.displayName)",
+                    "Dropdown: \(settings.dropdownPosition.label)",
+                    "Move with arrows, rotate with Up/Z, hard drop with Space, pause with P."
+                ],
+                buttons: [
+                    ("Get Started", { [weak self] in self?.completeFirstRun() }),
+                    ("Settings", { [weak self] in self?.showDetail(.settings) })
+                ]
+            )
+        case .stats:
+            let summary = liveStatsSummary()
+            return MatrixInfoPanel(
+                title: "STATS",
+                lines: summary,
+                buttons: [
+                    ("Close", { [weak self] in self?.hideDetail() })
+                ]
+            )
+        case .about:
+            return MatrixInfoPanel(
+                title: "ABOUT",
+                lines: [
+                    AppInfo.displayVersion,
+                    "Build \(AppInfo.build)",
+                    "Native Swift/AppKit menu-bar Tetris.",
+                    "No third-party runtime dependencies.",
+                    "macOS 13+"
+                ],
+                buttons: [
+                    ("Check Updates", { [weak self] in self?.openUpdates() }),
+                    ("Close", { [weak self] in self?.hideDetail() })
+                ]
+            )
+        case .changelog:
+            return MatrixInfoPanel(
+                title: "WHAT'S NEW",
+                lines: AppInfo.v100Changelog,
+                buttons: [
+                    ("Continue", { [weak self] in self?.hideDetail() }),
+                    ("Check Updates", { [weak self] in self?.openUpdates() })
+                ]
+            )
+        }
+    }
+
+    private func completeFirstRun() {
+        meta = appMetaStore.completeFirstRun()
+        if meta.lastChangelogVersionShown != AppInfo.version {
+            meta = appMetaStore.markChangelogShown()
+            showDetail(.changelog)
+        } else {
+            hideDetail()
+        }
+    }
+
+    private func openUpdates() {
+        NSWorkspace.shared.open(AppInfo.latestReleaseURL)
+    }
+
+    private func liveStatsSummary() -> [String] {
+        stats = statsStore.load()
+        let includeCurrentRun = engine.status != .gameOver || !statsRecordedForGame
+        let liveBestScore = max(stats.bestScore, settings.highScore, engine.score)
+        let liveBestLines = max(stats.bestLines, engine.linesCleared)
+        let liveTotalLines = stats.totalLines + (includeCurrentRun ? engine.linesCleared : 0)
+        let liveTotalClears = stats.totalLineClears + (includeCurrentRun ? engine.lineClearEvents : 0)
+        let livePlayTime = stats.totalPlayTime + (includeCurrentRun ? Date().timeIntervalSince(engine.startedAt) : 0)
+
+        return [
+            "Current Score: \(engine.score)",
+            "Current Lines: \(engine.linesCleared)",
+            "Games Finished: \(stats.gamesPlayed)",
+            "Best Score: \(liveBestScore)",
+            "Best Lines: \(liveBestLines)",
+            "Total Lines: \(liveTotalLines)",
+            "Clear Events: \(liveTotalClears)",
+            "Play Time: \(formatDuration(livePlayTime))",
+            "Last Finished: \(formatDate(stats.lastPlayed))"
+        ]
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(duration.rounded()))
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        }
+        return "\(seconds)s"
+    }
+
+    private func formatDate(_ date: Date?) -> String {
+        guard let date else { return "Never" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
     @objc private func restartPressed() {
         perform(.restart)
         focusGame()
     }
 
     @objc private func settingsPressed() {
-        let willOpen = settingsScrollView.isHidden
-        settingsScrollView.isHidden = !willOpen
-
-        if willOpen {
-            resumeAfterSettingsClose = engine.status == .running
-            engine.pause()
-            clearHeldInput()
-            updateLabels()
-            boardView.needsDisplay = true
-            nextPieceView.needsDisplay = true
-            window?.makeFirstResponder(settingsView)
+        if detailMode == .settings {
+            hideDetail()
         } else {
-            if resumeAfterSettingsClose {
-                engine.resume()
-            }
-            resumeAfterSettingsClose = false
-            updateLabels()
-            focusGame()
+            showDetail(.settings)
+        }
+    }
+
+    @objc private func statsPressed() {
+        if detailMode == .stats {
+            hideDetail()
+        } else {
+            showDetail(.stats)
+        }
+    }
+
+    @objc private func aboutPressed() {
+        if detailMode == .about {
+            hideDetail()
+        } else {
+            showDetail(.about)
+        }
+    }
+
+    @objc private func changelogPressed() {
+        if detailMode == .changelog {
+            hideDetail(markChangelogSeen: true)
+        } else {
+            showDetail(.changelog)
         }
     }
 
     @objc private func closePressed() {
+        persistSessionIfNeeded()
         onClose()
     }
 
     @objc private func quitPressed() {
+        persistSessionIfNeeded()
         onQuit()
     }
 
@@ -465,6 +780,14 @@ final class MatrixRootView: NSView {
 private struct RepeatState {
     var elapsed: TimeInterval
     var hasRepeated: Bool
+}
+
+private enum DetailMode {
+    case settings
+    case stats
+    case about
+    case changelog
+    case firstRun
 }
 
 private extension GameAction {

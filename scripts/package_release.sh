@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="0.2"
+VERSION="1.0.0"
 APP_PATH="$ROOT/dist/MatrixTetris.app"
 RELEASE_DIR="$ROOT/release"
 ZIP_PATH="$RELEASE_DIR/MatrixTetris-v${VERSION}-macOS.zip"

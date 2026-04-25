@@ -5,6 +5,14 @@ public struct SeededGenerator: RandomNumberGenerator, Sendable {
         state = seed == 0 ? 0x9E3779B97F4A7C15 : seed
     }
 
+    public init(restoringState state: UInt64) {
+        self.state = state
+    }
+
+    public var currentState: UInt64 {
+        state
+    }
+
     public mutating func next() -> UInt64 {
         state &+= 0x9E3779B97F4A7C15
         var value = state
@@ -13,4 +21,3 @@ public struct SeededGenerator: RandomNumberGenerator, Sendable {
         return value ^ (value >> 31)
     }
 }
-

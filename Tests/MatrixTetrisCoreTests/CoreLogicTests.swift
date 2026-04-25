@@ -8,11 +8,16 @@ public enum CoreLogicTests {
         try testHardDropLocksPieceAndScores()
         try testLineClearScoring()
         try testPauseAndResume()
+        try testSnapshotRestorePreservesGameState()
+        try testSnapshotRestorePreservesGameOverStatus()
         try testShortcutDefaults()
         try testGameplayBindingsDropFunctionModifier()
         try testOldDefaultShortcutsMigrate()
         try testSettingsNormalizeNewSliders()
         try testSettingsPersistence()
+        try testSavedGamePersistenceClearsGameOver()
+        try testStatsPersistenceAndRecording()
+        try testAppMetaPersistence()
     }
 
     private static func testMoveBounds() throws {
@@ -77,6 +82,52 @@ public enum CoreLogicTests {
 
         engine.resume()
         try expect(engine.status == .running, "resume should restart a paused game")
+    }
+
+    private static func testSnapshotRestorePreservesGameState() throws {
+        let engine = GameEngine(seed: 6)
+        _ = engine.moveRight()
+        engine.hardDrop()
+        engine.pause()
+
+        let snapshot = engine.snapshot()
+        let restored = GameEngine(seed: 99, autoStart: false)
+
+        try expect(restored.restore(from: snapshot), "valid snapshot should restore")
+        try expect(restored.board == snapshot.board, "board should restore")
+        try expect(restored.activePiece == snapshot.activePiece, "active piece should restore")
+        try expect(restored.nextQueue == snapshot.nextQueue, "next queue should restore")
+        try expect(restored.score == snapshot.score, "score should restore")
+        try expect(restored.level == snapshot.level, "level should restore")
+        try expect(restored.linesCleared == snapshot.linesCleared, "lines should restore")
+        try expect(restored.status == .paused, "paused status should restore")
+    }
+
+    private static func testSnapshotRestorePreservesGameOverStatus() throws {
+        let board = Array(repeating: Array(repeating: Optional<TetrominoKind>.none, count: 10), count: 20)
+        let snapshot = GameSnapshot(
+            width: 10,
+            height: 20,
+            board: board,
+            activePiece: nil,
+            nextQueue: [.i, .o, .t],
+            bag: [.s, .z, .j, .l],
+            score: 50,
+            level: 2,
+            linesCleared: 10,
+            lineClearEvents: 3,
+            status: .gameOver,
+            spawnSerial: 4,
+            lockTicks: 1,
+            rngState: 123,
+            startedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let restored = GameEngine(autoStart: false)
+
+        try expect(restored.restore(from: snapshot), "game over snapshot should restore")
+        try expect(restored.status == .gameOver, "game over status should restore")
+        try expect(restored.score == 50, "game over score should restore")
+        try expect(restored.linesCleared == 10, "game over lines should restore")
     }
 
     private static func testShortcutDefaults() throws {
@@ -147,6 +198,67 @@ public enum CoreLogicTests {
         try expect(reloaded.hotKey == settings.hotKey, "hotkey should persist")
         try expect(reloaded.holdHotKey == Shortcut(keyCode: MacKeyCode.grave, modifiers: [.option]), "old default hold hotkey should migrate on reload")
         try expect(reloaded.keyBindings[.hardDrop] == settings.keyBindings[.hardDrop], "control binding should persist")
+    }
+
+    private static func testSavedGamePersistenceClearsGameOver() throws {
+        let suiteName = "MatrixTetrisTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw TestFailure("could not create test defaults")
+        }
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let store = SavedGameStore(defaults: defaults)
+        let engine = GameEngine(seed: 7)
+        store.save(engine.snapshot())
+        try expect(store.load() != nil, "running game should persist")
+
+        var snapshot = engine.snapshot()
+        snapshot.status = .gameOver
+        store.save(snapshot)
+        try expect(store.load() == nil, "game over session should clear instead of restore")
+    }
+
+    private static func testStatsPersistenceAndRecording() throws {
+        let suiteName = "MatrixTetrisTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw TestFailure("could not create test defaults")
+        }
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let store = StatsStore(defaults: defaults)
+        let endedAt = Date(timeIntervalSince1970: 2_000)
+        _ = store.recordGame(score: 900, lines: 12, lineClearEvents: 5, duration: 75, endedAt: endedAt)
+        let stats = store.recordGame(score: 400, lines: 4, lineClearEvents: 2, duration: 25, endedAt: endedAt)
+
+        try expect(stats.gamesPlayed == 2, "games played should increment")
+        try expect(stats.bestScore == 900, "best score should persist")
+        try expect(stats.bestLines == 12, "best lines should persist")
+        try expect(stats.totalLines == 16, "total lines should accumulate")
+        try expect(stats.totalLineClears == 7, "line clear events should accumulate")
+        try expect(stats.totalPlayTime == 100, "play time should accumulate")
+        try expect(stats.lastPlayed == endedAt, "last played should update")
+    }
+
+    private static func testAppMetaPersistence() throws {
+        let suiteName = "MatrixTetrisTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw TestFailure("could not create test defaults")
+        }
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let store = AppMetaStore(defaults: defaults)
+        var meta = store.completeFirstRun()
+        try expect(meta.firstRunCompleted, "first run flag should persist")
+
+        meta = store.markChangelogShown(version: AppInfo.version)
+        try expect(meta.lastChangelogVersionShown == AppInfo.version, "changelog version should persist")
+        try expect(store.load() == meta, "app meta should reload")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

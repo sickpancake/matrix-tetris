@@ -239,7 +239,7 @@ final class TetrisBoardView: NSView {
         NSColor(calibratedWhite: 0, alpha: 0.7).setFill()
         rect.fill()
 
-        let text = "GAME OVER\nPress R"
+        let text = "GAME OVER"
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         let attributes: [NSAttributedString.Key: Any] = [
@@ -247,7 +247,7 @@ final class TetrisBoardView: NSView {
             .foregroundColor: NSColor(calibratedRed: 0.65, green: 1, blue: 0.72, alpha: 1),
             .paragraphStyle: paragraph
         ]
-        text.draw(in: NSRect(x: rect.minX, y: rect.midY - 38, width: rect.width, height: 76), withAttributes: attributes)
+        text.draw(in: NSRect(x: rect.minX, y: rect.midY - 18, width: rect.width, height: 44), withAttributes: attributes)
     }
 
     private func drawCell(

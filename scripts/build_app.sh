@@ -29,6 +29,7 @@ APP_SOURCES=(
   "$ROOT/Sources/MatrixTetris/HotKeyManager.swift"
   "$ROOT/Sources/MatrixTetris/DropdownController.swift"
   "$ROOT/Sources/MatrixTetris/MatrixButton.swift"
+  "$ROOT/Sources/MatrixTetris/MatrixInfoPanel.swift"
   "$ROOT/Sources/MatrixTetris/MatrixRootView.swift"
   "$ROOT/Sources/MatrixTetris/TetrisBoardView.swift"
   "$ROOT/Sources/MatrixTetris/SettingsView.swift"
@@ -85,9 +86,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2</string>
+  <string>1.0.0</string>
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>100</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>

@@ -177,6 +177,10 @@ final class SettingsView: NSView {
         let reset = MatrixButton(title: "Reset Settings", target: self, action: #selector(resetPressed))
         stack.addArrangedSubview(reset)
 
+        let version = settingLabel(AppInfo.displayVersion)
+        version.textColor = NSColor(calibratedRed: 0.5, green: 1, blue: 0.62, alpha: 0.85)
+        stack.addArrangedSubview(version)
+
         statusLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
         statusLabel.textColor = NSColor(calibratedRed: 0.5, green: 1, blue: 0.62, alpha: 0.9)
         statusLabel.maximumNumberOfLines = 2

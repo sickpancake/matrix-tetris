@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        dropdownController?.saveBeforeTerminate()
         hotKeyManager?.unregister()
     }
 

@@ -1,6 +1,8 @@
 # Matrix Tetris
 
-Matrix Tetris is a native macOS menu-bar Tetris dropdown. It opens as a compact floating panel with Matrix-style rendering, remappable controls, high score persistence, ghost pieces, subtle animations, and global shortcuts.
+Matrix Tetris is a native macOS menu-bar Tetris dropdown. It opens as a compact floating panel with Matrix-style rendering, remappable controls, saved-game resume, high score and stats persistence, ghost pieces, subtle animations, and global shortcuts.
+
+Made with Codex.
 
 ## Features
 
@@ -10,7 +12,9 @@ Matrix Tetris is a native macOS menu-bar Tetris dropdown. It opens as a compact 
 - Ghost piece projection.
 - Matrix visual style with code rain, green glitch outlines, subtle line-clear/hard-drop/spawn animations, and Matrix-styled buttons.
 - Settings for gameplay controls, movement sensitivity, soft-drop speed, animation mode, global shortcuts, and dropdown location.
-- Local high score and settings persistence via `UserDefaults`.
+- Automatic resume for unfinished games.
+- First-run setup, About/version UI, in-app changelog, GitHub update link, and Matrix-styled game-over flow.
+- Local high score, stats, settings, saved game, and app-meta persistence via `UserDefaults`.
 
 ## Install
 
@@ -18,12 +22,21 @@ Download the app from the latest GitHub release:
 
 [Matrix Tetris Releases](https://github.com/sickpancake/matrix-tetris/releases/latest)
 
-1. Download `MatrixTetris-v0.2-macOS.zip`.
+Supported download target: Apple Silicon Macs running macOS 13 or newer.
+
+1. Download `MatrixTetris-v1.0.0-macOS.zip`.
 2. Unzip it.
-3. Open `MatrixTetris.app`.
-4. The menu-bar item appears as `MT`.
+3. Drag `MatrixTetris.app` to Applications if you want it installed there.
+4. Open `MatrixTetris.app`.
+5. The menu-bar item appears as `MT`.
 
 This app is ad-hoc signed, not notarized through the Mac App Store. If macOS blocks the first launch, right-click `MatrixTetris.app`, choose `Open`, then confirm. After that, it should open normally.
+
+## Update
+
+Download the newest zip from the release page, quit Matrix Tetris, then replace the old `MatrixTetris.app` with the new one. Your settings, stats, high score, and unfinished saved game are stored locally with `UserDefaults`, so replacing the app bundle does not delete them.
+
+Inside the app, open `About` and choose `Check Updates` to jump to the latest GitHub release.
 
 ## Shortcuts
 
@@ -48,7 +61,7 @@ Open `Settings` in the dropdown to remap controls, adjust movement sensitivity, 
 
 Requirements:
 
-- macOS 13 or newer
+- Apple Silicon Mac running macOS 13 or newer
 - Xcode Command Line Tools
 - Swift compiler from the macOS toolchain
 
@@ -73,7 +86,7 @@ Package a release zip:
 The release zip is created at:
 
 ```text
-release/MatrixTetris-v0.2-macOS.zip
+release/MatrixTetris-v1.0.0-macOS.zip
 ```
 
 Run locally from the repo:

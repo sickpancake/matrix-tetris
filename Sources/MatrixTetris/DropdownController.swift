@@ -15,14 +15,7 @@ final class DropdownController {
     private var localHotKeyMonitor: Any?
     private var lastToggleTime: TimeInterval = 0
     private var openedByHoldHotKey = false
-    private lazy var rootView: MatrixRootView = MatrixRootView(
-        settingsStore: settingsStore,
-        onSettingsChanged: onSettingsChanged,
-        onClose: { [weak self] in
-            self?.hide()
-        },
-        onQuit: onQuit
-    )
+    private var rootView: MatrixRootView?
     private lazy var panel: GamePanel = makePanel()
 
     init(
@@ -47,11 +40,11 @@ final class DropdownController {
     func openForHold(anchor: NSStatusBarButton?) {
         guard !panel.isVisible else {
             openedByHoldHotKey = false
-            rootView.setHoldShortcutActive(false)
+            rootView?.setHoldShortcutActive(false)
             return
         }
         openedByHoldHotKey = true
-        rootView.setHoldShortcutActive(true)
+        gameView().setHoldShortcutActive(true)
         show(anchor: anchor, source: .hotKey)
     }
 
@@ -61,11 +54,16 @@ final class DropdownController {
     }
 
     func repositionIfVisible(anchor: NSStatusBarButton?) {
-        guard panel.isVisible else { return }
+        guard panel.isVisible, let rootView else { return }
         panel.setFrame(frame(for: rootView.settings.dropdownPosition, anchor: anchor), display: true, animate: true)
     }
 
+    func saveBeforeTerminate() {
+        rootView?.saveBeforeTerminate()
+    }
+
     private func show(anchor: NSStatusBarButton?, source: DropdownSource) {
+        let rootView = gameView()
         panel.setFrame(frame(for: effectivePosition(source: source), anchor: anchor), display: false)
         panel.contentView = rootView
         rootView.resumeRendering()
@@ -77,10 +75,26 @@ final class DropdownController {
 
     private func hide() {
         openedByHoldHotKey = false
-        rootView.setHoldShortcutActive(false)
-        rootView.suspendRendering()
+        rootView?.setHoldShortcutActive(false)
+        rootView?.suspendRendering()
         removeLocalHotKeyMonitor()
         panel.orderOut(nil)
+    }
+
+    private func gameView() -> MatrixRootView {
+        if let rootView {
+            return rootView
+        }
+        let view = MatrixRootView(
+            settingsStore: settingsStore,
+            onSettingsChanged: onSettingsChanged,
+            onClose: { [weak self] in
+                self?.hide()
+            },
+            onQuit: onQuit
+        )
+        rootView = view
+        return view
     }
 
     private func acceptToggleEvent() -> Bool {
@@ -94,8 +108,9 @@ final class DropdownController {
         guard localHotKeyMonitor == nil else { return }
         localHotKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            guard !self.rootView.isCapturingSettingsInput else { return event }
-            guard Shortcut(event: event) == self.rootView.settings.hotKey else { return event }
+            guard let rootView = self.rootView else { return event }
+            guard !rootView.isCapturingSettingsInput else { return event }
+            guard Shortcut(event: event) == rootView.settings.hotKey else { return event }
             guard self.acceptToggleEvent() else { return nil }
             self.hide()
             return nil
@@ -109,7 +124,7 @@ final class DropdownController {
     }
 
     private func effectivePosition(source: DropdownSource) -> DropdownPosition {
-        let configured = rootView.settings.dropdownPosition
+        let configured = gameView().settings.dropdownPosition
         if source == .statusItem && configured == .menuBar {
             return .menuBar
         }
