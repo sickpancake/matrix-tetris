@@ -217,6 +217,32 @@ public enum AnimationMode: String, CaseIterable, Codable, Sendable {
     }
 }
 
+public enum AnimationEffect: String, CaseIterable, Codable, Sendable {
+    case lineClear
+    case hardDrop
+    case softDrop
+    case spawn
+    case move
+    case landing
+
+    public var label: String {
+        switch self {
+        case .lineClear:
+            "Line Clear FX"
+        case .hardDrop:
+            "Hard Drop FX"
+        case .softDrop:
+            "Soft Drop FX"
+        case .spawn:
+            "Spawn FX"
+        case .move:
+            "Move FX"
+        case .landing:
+            "Landing FX"
+        }
+    }
+}
+
 public enum MacKeyCode {
     public static let a: UInt16 = 0
     public static let s: UInt16 = 1

@@ -1,10 +1,18 @@
 import Foundation
 
 public enum AppInfo {
-    public static let version = "1.0.0"
-    public static let build = "100"
+    public static let version = "1.1.0"
+    public static let build = "110"
     public static let displayVersion = "Matrix Tetris v\(version)"
     public static let latestReleaseURL = URL(string: "https://github.com/sickpancake/matrix-tetris/releases/latest")!
+
+    public static let v110Changelog = [
+        "Clicking outside the dropdown now auto-hides it without breaking shortcuts.",
+        "Added soft-drop trails, landing feedback, and smoother Matrix movement pulses.",
+        "Speed Scaling is now optional and defaults off for steadier falling speed.",
+        "Added per-animation intensity sliders, ghost opacity, reset saved game, duplicate-control warnings, and clearer settings.",
+        "Refreshed About, install/update text, and app packaging for v1.1.0."
+    ]
 
     public static let v100Changelog = [
         "Saved games now resume automatically.",
@@ -22,7 +30,10 @@ public struct SettingsState: Codable, Equatable, Sendable {
     public var dropdownPosition: DropdownPosition
     public var inputSensitivity: Int
     public var softDropSpeed: Int
+    public var speedScalingEnabled: Bool
+    public var ghostOpacity: Int
     public var animationMode: AnimationMode
+    public var animationIntensities: AnimationIntensityState
     public var keyBindings: [GameAction: Shortcut]
 
     public init(
@@ -32,7 +43,10 @@ public struct SettingsState: Codable, Equatable, Sendable {
         dropdownPosition: DropdownPosition,
         inputSensitivity: Int = 5,
         softDropSpeed: Int = 7,
+        speedScalingEnabled: Bool = false,
+        ghostOpacity: Int = 4,
         animationMode: AnimationMode = .subtle,
+        animationIntensities: AnimationIntensityState = .defaultState(),
         keyBindings: [GameAction: Shortcut]
     ) {
         self.highScore = highScore
@@ -41,7 +55,10 @@ public struct SettingsState: Codable, Equatable, Sendable {
         self.dropdownPosition = dropdownPosition
         self.inputSensitivity = inputSensitivity
         self.softDropSpeed = softDropSpeed
+        self.speedScalingEnabled = speedScalingEnabled
+        self.ghostOpacity = ghostOpacity
         self.animationMode = animationMode
+        self.animationIntensities = animationIntensities
         self.keyBindings = keyBindings
     }
 
@@ -53,7 +70,10 @@ public struct SettingsState: Codable, Equatable, Sendable {
             dropdownPosition: .rightSide,
             inputSensitivity: 5,
             softDropSpeed: 7,
+            speedScalingEnabled: false,
+            ghostOpacity: 4,
             animationMode: .subtle,
+            animationIntensities: .defaultState(),
             keyBindings: defaultKeyBindings
         )
     }
@@ -77,6 +97,8 @@ public struct SettingsState: Codable, Equatable, Sendable {
         }
         copy.inputSensitivity = min(max(copy.inputSensitivity, 1), 10)
         copy.softDropSpeed = min(max(copy.softDropSpeed, 1), 10)
+        copy.ghostOpacity = min(max(copy.ghostOpacity, 1), 10)
+        copy.animationIntensities = copy.animationIntensities.normalized()
         return copy
     }
 
@@ -87,7 +109,10 @@ public struct SettingsState: Codable, Equatable, Sendable {
         case dropdownPosition
         case inputSensitivity
         case softDropSpeed
+        case speedScalingEnabled
+        case ghostOpacity
         case animationMode
+        case animationIntensities
         case keyBindings
     }
 
@@ -100,7 +125,10 @@ public struct SettingsState: Codable, Equatable, Sendable {
         dropdownPosition = try container.decodeIfPresent(DropdownPosition.self, forKey: .dropdownPosition) ?? defaults.dropdownPosition
         inputSensitivity = try container.decodeIfPresent(Int.self, forKey: .inputSensitivity) ?? defaults.inputSensitivity
         softDropSpeed = try container.decodeIfPresent(Int.self, forKey: .softDropSpeed) ?? defaults.softDropSpeed
+        speedScalingEnabled = try container.decodeIfPresent(Bool.self, forKey: .speedScalingEnabled) ?? defaults.speedScalingEnabled
+        ghostOpacity = try container.decodeIfPresent(Int.self, forKey: .ghostOpacity) ?? defaults.ghostOpacity
         animationMode = try container.decodeIfPresent(AnimationMode.self, forKey: .animationMode) ?? defaults.animationMode
+        animationIntensities = try container.decodeIfPresent(AnimationIntensityState.self, forKey: .animationIntensities) ?? defaults.animationIntensities
         keyBindings = try container.decodeIfPresent([GameAction: Shortcut].self, forKey: .keyBindings) ?? defaults.keyBindings
     }
 
@@ -112,7 +140,10 @@ public struct SettingsState: Codable, Equatable, Sendable {
         try container.encode(dropdownPosition, forKey: .dropdownPosition)
         try container.encode(inputSensitivity, forKey: .inputSensitivity)
         try container.encode(softDropSpeed, forKey: .softDropSpeed)
+        try container.encode(speedScalingEnabled, forKey: .speedScalingEnabled)
+        try container.encode(ghostOpacity, forKey: .ghostOpacity)
         try container.encode(animationMode, forKey: .animationMode)
+        try container.encode(animationIntensities, forKey: .animationIntensities)
         try container.encode(keyBindings, forKey: .keyBindings)
     }
 
@@ -179,6 +210,115 @@ public final class SettingsStore {
         let state = SettingsState.defaultState(highScore: highScore)
         save(state)
         return state
+    }
+}
+
+public struct AnimationIntensityState: Codable, Equatable, Sendable {
+    public var lineClear: Int
+    public var hardDrop: Int
+    public var softDrop: Int
+    public var spawn: Int
+    public var move: Int
+    public var landing: Int
+
+    public init(
+        lineClear: Int = 6,
+        hardDrop: Int = 5,
+        softDrop: Int = 4,
+        spawn: Int = 5,
+        move: Int = 4,
+        landing: Int = 5
+    ) {
+        self.lineClear = lineClear
+        self.hardDrop = hardDrop
+        self.softDrop = softDrop
+        self.spawn = spawn
+        self.move = move
+        self.landing = landing
+    }
+
+    public static func defaultState() -> AnimationIntensityState {
+        AnimationIntensityState()
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case lineClear
+        case hardDrop
+        case softDrop
+        case spawn
+        case move
+        case landing
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = AnimationIntensityState.defaultState()
+        lineClear = try container.decodeIfPresent(Int.self, forKey: .lineClear) ?? defaults.lineClear
+        hardDrop = try container.decodeIfPresent(Int.self, forKey: .hardDrop) ?? defaults.hardDrop
+        softDrop = try container.decodeIfPresent(Int.self, forKey: .softDrop) ?? defaults.softDrop
+        spawn = try container.decodeIfPresent(Int.self, forKey: .spawn) ?? defaults.spawn
+        move = try container.decodeIfPresent(Int.self, forKey: .move) ?? defaults.move
+        landing = try container.decodeIfPresent(Int.self, forKey: .landing) ?? defaults.landing
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(lineClear, forKey: .lineClear)
+        try container.encode(hardDrop, forKey: .hardDrop)
+        try container.encode(softDrop, forKey: .softDrop)
+        try container.encode(spawn, forKey: .spawn)
+        try container.encode(move, forKey: .move)
+        try container.encode(landing, forKey: .landing)
+    }
+
+    public func normalized() -> AnimationIntensityState {
+        AnimationIntensityState(
+            lineClear: Self.clamped(lineClear),
+            hardDrop: Self.clamped(hardDrop),
+            softDrop: Self.clamped(softDrop),
+            spawn: Self.clamped(spawn),
+            move: Self.clamped(move),
+            landing: Self.clamped(landing)
+        )
+    }
+
+    public func value(for effect: AnimationEffect) -> Int {
+        switch effect {
+        case .lineClear:
+            lineClear
+        case .hardDrop:
+            hardDrop
+        case .softDrop:
+            softDrop
+        case .spawn:
+            spawn
+        case .move:
+            move
+        case .landing:
+            landing
+        }
+    }
+
+    public mutating func setValue(_ value: Int, for effect: AnimationEffect) {
+        let clamped = Self.clamped(value)
+        switch effect {
+        case .lineClear:
+            lineClear = clamped
+        case .hardDrop:
+            hardDrop = clamped
+        case .softDrop:
+            softDrop = clamped
+        case .spawn:
+            spawn = clamped
+        case .move:
+            move = clamped
+        case .landing:
+            landing = clamped
+        }
+    }
+
+    private static func clamped(_ value: Int) -> Int {
+        min(max(value, 0), 10)
     }
 }
 

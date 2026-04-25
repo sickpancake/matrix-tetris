@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.0
+
+- Fixed dropdown reopening after clicking outside by auto-hiding and preserving global shortcuts.
+- Added soft-drop trails, landing feedback, and movement pulse animations.
+- Added optional speed scaling, defaulting off for steadier falling speed.
+- Added per-animation intensity sliders, ghost opacity, reset saved game, duplicate-control warnings, and clearer settings labels.
+- Refreshed the menu-bar icon, About/install wording, release packaging, and app bundle version to `1.1.0` / build `110`.
+
 ## v1.0.0
 
 - Added automatic saved-game resume for unfinished games.

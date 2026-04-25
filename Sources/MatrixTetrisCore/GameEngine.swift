@@ -200,6 +200,17 @@ public final class GameEngine {
         return piece
     }
 
+    public var activePieceIsGrounded: Bool {
+        guard status == .running, var piece = activePiece else { return false }
+        piece.origin.y += 1
+        return !isValidPosition(piece)
+    }
+
+    public var lockProgress: Double {
+        guard activePieceIsGrounded else { return 0 }
+        return min(1, Double(lockTicks) / Double(max(1, lockDelayTicks)))
+    }
+
     public func cell(at point: GridPoint) -> TetrominoKind? {
         guard isInsideBoard(point) else { return nil }
         return board[point.y][point.x]

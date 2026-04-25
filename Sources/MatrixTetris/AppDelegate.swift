@@ -49,8 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "MT"
-        item.button?.font = .monospacedSystemFont(ofSize: 13, weight: .semibold)
+        item.button?.image = makeStatusImage()
+        item.button?.imagePosition = .imageOnly
         item.button?.target = self
         item.button?.action = #selector(toggleFromStatusItem)
         statusItem = item
@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try hotKeyManager?.register(toggleShortcut: settings.hotKey, holdShortcut: settings.holdHotKey)
             registeredHotKey = settings.hotKey
             registeredHoldHotKey = settings.holdHotKey
+            dropdownController?.setShortcutStatus("Shortcuts registered globally.")
         } catch {
             if hotKeyManager?.isToggleRegistered == true {
                 registeredHotKey = settings.hotKey
@@ -74,8 +75,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 registeredHotKey = nil
                 registeredHoldHotKey = nil
             }
+            dropdownController?.setShortcutStatus("Shortcut registration failed. Try a different combo.")
             NSAlert(error: error).runModal()
         }
         dropdownController?.repositionIfVisible(anchor: statusItem?.button)
+    }
+
+    private func makeStatusImage() -> NSImage {
+        NSImage(size: NSSize(width: 25, height: 18), flipped: false) { rect in
+            NSColor.clear.setFill()
+            rect.fill()
+
+            let stroke = NSBezierPath(rect: rect.insetBy(dx: 3, dy: 2))
+            stroke.lineWidth = 1
+            NSColor(calibratedRed: 0.18, green: 1, blue: 0.38, alpha: 0.9).setStroke()
+            stroke.stroke()
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .bold),
+                .foregroundColor: NSColor(calibratedRed: 0.25, green: 1, blue: 0.45, alpha: 1)
+            ]
+            "MT".draw(at: NSPoint(x: 6, y: 3), withAttributes: attributes)
+            return true
+        }
     }
 }

@@ -14,6 +14,7 @@ public enum CoreLogicTests {
         try testGameplayBindingsDropFunctionModifier()
         try testOldDefaultShortcutsMigrate()
         try testSettingsNormalizeNewSliders()
+        try testSettingsDecodeV110Defaults()
         try testSettingsPersistence()
         try testSavedGamePersistenceClearsGameOver()
         try testStatsPersistenceAndRecording()
@@ -136,7 +137,11 @@ public enum CoreLogicTests {
         try expect(defaults.hotKey == Shortcut(keyCode: MacKeyCode.grave, modifiers: [.option, .shift]), "toggle shortcut should default to Opt+Shift+~")
         try expect(defaults.holdHotKey == Shortcut(keyCode: MacKeyCode.grave, modifiers: [.option]), "hold shortcut should default to Opt+~")
         try expect(defaults.softDropSpeed == 7, "soft drop speed should default to 7")
+        try expect(defaults.speedScalingEnabled == false, "speed scaling should default off")
+        try expect(defaults.ghostOpacity == 4, "ghost opacity should default to 4")
         try expect(defaults.animationMode == .subtle, "animations should default to subtle")
+        try expect(defaults.animationIntensities.softDrop == 4, "soft drop animation should default to a restrained intensity")
+        try expect(defaults.animationIntensities.lineClear == 6, "line clear animation should have a visible default")
         try expect(ShortcutModifier.function.display == "Fn", "function modifier should display as Fn")
     }
 
@@ -162,10 +167,33 @@ public enum CoreLogicTests {
         var settings = SettingsState.defaultState()
         settings.inputSensitivity = 40
         settings.softDropSpeed = -2
+        settings.ghostOpacity = 50
+        settings.animationIntensities = AnimationIntensityState(lineClear: -2, hardDrop: 11, softDrop: 50, spawn: 5, move: -8, landing: 3)
 
         let normalized = settings.normalized()
         try expect(normalized.inputSensitivity == 10, "movement sensitivity should clamp to 10")
         try expect(normalized.softDropSpeed == 1, "soft drop speed should clamp to 1")
+        try expect(normalized.ghostOpacity == 10, "ghost opacity should clamp to 10")
+        try expect(normalized.animationIntensities.lineClear == 0, "animation intensities should clamp to 0")
+        try expect(normalized.animationIntensities.hardDrop == 10, "animation intensities should clamp to 10")
+        try expect(normalized.animationIntensities.softDrop == 10, "soft drop animation intensity should clamp to 10")
+    }
+
+    private static func testSettingsDecodeV110Defaults() throws {
+        let data = try JSONEncoder().encode(SettingsState.defaultState())
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw TestFailure("settings should encode as a JSON object")
+        }
+        object.removeValue(forKey: "speedScalingEnabled")
+        object.removeValue(forKey: "ghostOpacity")
+        object.removeValue(forKey: "animationIntensities")
+
+        let oldData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(SettingsState.self, from: oldData).normalized()
+
+        try expect(decoded.speedScalingEnabled == false, "missing speed scaling should default off")
+        try expect(decoded.ghostOpacity == 4, "missing ghost opacity should use the v1.1 default")
+        try expect(decoded.animationIntensities == .defaultState(), "missing animation intensities should use defaults")
     }
 
     private static func testSettingsPersistence() throws {
@@ -183,7 +211,10 @@ public enum CoreLogicTests {
         settings.dropdownPosition = .leftSide
         settings.inputSensitivity = 9
         settings.softDropSpeed = 8
+        settings.speedScalingEnabled = true
+        settings.ghostOpacity = 6
         settings.animationMode = .off
+        settings.animationIntensities = AnimationIntensityState(lineClear: 2, hardDrop: 3, softDrop: 4, spawn: 5, move: 6, landing: 7)
         settings.hotKey = Shortcut(keyCode: MacKeyCode.t, modifiers: [.command, .shift])
         settings.holdHotKey = Shortcut(keyCode: MacKeyCode.grave, modifiers: [.control, .option])
         settings.keyBindings[.hardDrop] = Shortcut(keyCode: MacKeyCode.d, modifiers: [.option])
@@ -194,7 +225,10 @@ public enum CoreLogicTests {
         try expect(reloaded.dropdownPosition == .leftSide, "dropdown position should persist")
         try expect(reloaded.inputSensitivity == 9, "input sensitivity should persist")
         try expect(reloaded.softDropSpeed == 8, "soft drop speed should persist")
+        try expect(reloaded.speedScalingEnabled, "speed scaling should persist")
+        try expect(reloaded.ghostOpacity == 6, "ghost opacity should persist")
         try expect(reloaded.animationMode == .off, "animation mode should persist")
+        try expect(reloaded.animationIntensities == settings.animationIntensities, "animation intensities should persist")
         try expect(reloaded.hotKey == settings.hotKey, "hotkey should persist")
         try expect(reloaded.holdHotKey == Shortcut(keyCode: MacKeyCode.grave, modifiers: [.option]), "old default hold hotkey should migrate on reload")
         try expect(reloaded.keyBindings[.hardDrop] == settings.keyBindings[.hardDrop], "control binding should persist")

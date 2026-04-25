@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="1.0.0"
+VERSION="1.1.0"
 APP_PATH="$ROOT/dist/MatrixTetris.app"
 RELEASE_DIR="$ROOT/release"
 ZIP_PATH="$RELEASE_DIR/MatrixTetris-v${VERSION}-macOS.zip"
@@ -14,6 +14,10 @@ if [[ "$APP_BUILT" != "$APP_PATH" ]]; then
 fi
 
 plutil -lint "$APP_PATH/Contents/Info.plist"
+
+if command -v xattr >/dev/null 2>&1; then
+  xattr -cr "$APP_PATH"
+fi
 
 if command -v codesign >/dev/null 2>&1; then
   codesign --force --deep --sign - "$APP_PATH"

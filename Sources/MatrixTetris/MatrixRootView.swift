@@ -20,9 +20,15 @@ final class MatrixRootView: NSView {
     private let stateLabel = NSTextField(labelWithString: "")
     private let detailScrollView = NSScrollView()
     private let gameOverSlot = NSStackView()
-    private lazy var settingsView = SettingsView(settings: settings) { [weak self] settings in
-        self?.applySettings(settings)
-    }
+    private lazy var settingsView = SettingsView(
+        settings: settings,
+        onChange: { [weak self] settings in
+            self?.applySettings(settings)
+        },
+        onResetSavedGame: { [weak self] in
+            self?.resetSavedGameFromSettings()
+        }
+    )
 
     private var timer: Timer?
     private var lastFrameTime = Date()
@@ -63,6 +69,8 @@ final class MatrixRootView: NSView {
         }
         buildInterface()
         boardView.animationMode = settings.animationMode
+        boardView.ghostOpacity = settings.ghostOpacity
+        boardView.animationIntensities = settings.animationIntensities
         lastSpawnSerial = engine.spawnSerial
         updateLabels()
         showStartupPanelsIfNeeded()
@@ -101,6 +109,10 @@ final class MatrixRootView: NSView {
 
     func saveBeforeTerminate() {
         persistSessionIfNeeded()
+    }
+
+    func setSettingsStatus(_ text: String) {
+        settingsView.showStatus(text)
     }
 
     func setHoldShortcutActive(_ active: Bool) {
@@ -297,7 +309,9 @@ final class MatrixRootView: NSView {
     }
 
     private var gravityInterval: TimeInterval {
-        max(0.08, 0.62 - TimeInterval(engine.level - 1) * 0.045)
+        let baseInterval: TimeInterval = 0.62
+        guard settings.speedScalingEnabled else { return baseInterval }
+        return max(0.08, baseInterval - TimeInterval(engine.level - 1) * 0.045)
     }
 
     @discardableResult
@@ -305,6 +319,7 @@ final class MatrixRootView: NSView {
         var changed = false
         let previousLines = engine.linesCleared
         let previousSpawnSerial = engine.spawnSerial
+        let softDropStart = action == .softDrop ? engine.activePiece : nil
         let hardDropStart = action == .hardDrop ? engine.activePiece : nil
         let hardDropTarget = action == .hardDrop ? engine.ghostPiece() : nil
         switch action {
@@ -335,6 +350,12 @@ final class MatrixRootView: NSView {
             hardDropStart: hardDropStart,
             hardDropTarget: hardDropTarget
         )
+        if changed, action == .softDrop, let softDropStart, let softDropEnd = engine.activePiece {
+            boardView.triggerSoftDropTrail(from: softDropStart, to: softDropEnd)
+        }
+        if changed && (action == .moveLeft || action == .moveRight) {
+            boardView.triggerMovePulse()
+        }
 
         guard refresh else { return changed }
         let scoreChanged = updateHighScoreIfNeeded()
@@ -354,6 +375,8 @@ final class MatrixRootView: NSView {
         settingsStore.save(settings)
         settingsView.settings = settings
         boardView.animationMode = settings.animationMode
+        boardView.ghostOpacity = settings.ghostOpacity
+        boardView.animationIntensities = settings.animationIntensities
         onSettingsChanged(settings)
         if detailScrollView.isHidden && !settingsView.isCapturing {
             focusGame()
@@ -368,6 +391,22 @@ final class MatrixRootView: NSView {
         savedGameStore.clear()
         persistSessionIfNeeded()
         rebuildGameOverPanel()
+    }
+
+    private func resetSavedGameFromSettings() {
+        savedGameStore.clear()
+        engine.startNewGame()
+        if detailMode != nil {
+            engine.pause()
+        }
+        gravityAccumulator = 0
+        statsRecordedForGame = false
+        updateLabels()
+        persistSessionIfNeeded()
+        refreshStatsDetailIfVisible()
+        boardView.triggerSpawnPulse()
+        boardView.needsDisplay = true
+        nextPieceView.needsDisplay = true
     }
 
     private func persistSessionIfNeeded() {
@@ -594,7 +633,7 @@ final class MatrixRootView: NSView {
     private func detailView(for mode: DetailMode) -> NSView {
         switch mode {
         case .settings:
-            settingsView.frame = NSRect(x: 0, y: 0, width: 188, height: 610)
+            settingsView.frame = NSRect(x: 0, y: 0, width: 188, height: 1_120)
             return settingsView
         case .firstRun:
             return MatrixInfoPanel(
@@ -626,6 +665,7 @@ final class MatrixRootView: NSView {
                     AppInfo.displayVersion,
                     "Build \(AppInfo.build)",
                     "Native Swift/AppKit menu-bar Tetris.",
+                    "GitHub release zip for Apple Silicon Macs.",
                     "No third-party runtime dependencies.",
                     "macOS 13+"
                 ],
@@ -637,7 +677,7 @@ final class MatrixRootView: NSView {
         case .changelog:
             return MatrixInfoPanel(
                 title: "WHAT'S NEW",
-                lines: AppInfo.v100Changelog,
+                lines: AppInfo.v110Changelog,
                 buttons: [
                     ("Continue", { [weak self] in self?.hideDetail() }),
                     ("Check Updates", { [weak self] in self?.openUpdates() })

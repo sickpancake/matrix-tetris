@@ -15,6 +15,7 @@ final class DropdownController {
     private var localHotKeyMonitor: Any?
     private var lastToggleTime: TimeInterval = 0
     private var openedByHoldHotKey = false
+    private var isHiding = false
     private var rootView: MatrixRootView?
     private lazy var panel: GamePanel = makePanel()
 
@@ -62,6 +63,10 @@ final class DropdownController {
         rootView?.saveBeforeTerminate()
     }
 
+    func setShortcutStatus(_ text: String) {
+        rootView?.setSettingsStatus(text)
+    }
+
     private func show(anchor: NSStatusBarButton?, source: DropdownSource) {
         let rootView = gameView()
         panel.setFrame(frame(for: effectivePosition(source: source), anchor: anchor), display: false)
@@ -74,11 +79,14 @@ final class DropdownController {
     }
 
     private func hide() {
+        guard panel.isVisible else { return }
         openedByHoldHotKey = false
         rootView?.setHoldShortcutActive(false)
         rootView?.suspendRendering()
         removeLocalHotKeyMonitor()
+        isHiding = true
         panel.orderOut(nil)
+        isHiding = false
     }
 
     private func gameView() -> MatrixRootView {
@@ -144,7 +152,18 @@ final class DropdownController {
         panel.hasShadow = true
         panel.level = .floating
         panel.collectionBehavior = [.moveToActiveSpace, .transient, .fullScreenAuxiliary]
+        panel.onResignKey = { [weak self] in
+            self?.hideAfterFocusLoss()
+        }
         return panel
+    }
+
+    private func hideAfterFocusLoss() {
+        guard panel.isVisible, !isHiding else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.panel.isVisible, !self.isHiding else { return }
+            self.hide()
+        }
     }
 
     private func frame(for position: DropdownPosition, anchor: NSStatusBarButton?) -> NSRect {
@@ -196,6 +215,18 @@ final class DropdownController {
 }
 
 final class GamePanel: NSPanel {
+    var onResignKey: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func resignKey() {
+        super.resignKey()
+        onResignKey?()
+    }
+
+    override func resignMain() {
+        super.resignMain()
+        onResignKey?()
+    }
 }
