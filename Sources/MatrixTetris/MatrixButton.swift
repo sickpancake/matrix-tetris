@@ -1,6 +1,8 @@
 import AppKit
 
 final class MatrixButton: NSButton {
+    static var soundHandler: (() -> Void)?
+
     override var title: String {
         didSet {
             applyTitleStyle()
@@ -28,6 +30,11 @@ final class MatrixButton: NSButton {
         didSet {
             refreshLayer()
         }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        Self.soundHandler?()
+        super.mouseDown(with: event)
     }
 
     private func configure() {

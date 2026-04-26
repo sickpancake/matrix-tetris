@@ -243,6 +243,52 @@ public enum AnimationEffect: String, CaseIterable, Codable, Sendable {
     }
 }
 
+public enum SoundTheme: String, CaseIterable, Codable, Sendable {
+    case matrixMinimal
+    case arcadePunchy
+
+    public var label: String {
+        switch self {
+        case .matrixMinimal:
+            "Matrix Minimal"
+        case .arcadePunchy:
+            "Arcade Punchy"
+        }
+    }
+}
+
+public enum SoundEffect: String, CaseIterable, Codable, Sendable {
+    case move
+    case rotate
+    case softDrop
+    case hardDrop
+    case lock
+    case lineClearSingle
+    case lineClearDouble
+    case lineClearTriple
+    case lineClearTetris
+    case gameOver
+    case pause
+    case resume
+    case highScore
+    case dropdownOpen
+    case dropdownClose
+    case button
+
+    public static func lineClear(for clearedLines: Int) -> SoundEffect {
+        switch clearedLines {
+        case 1:
+            .lineClearSingle
+        case 2:
+            .lineClearDouble
+        case 3:
+            .lineClearTriple
+        default:
+            .lineClearTetris
+        }
+    }
+}
+
 public enum MacKeyCode {
     public static let a: UInt16 = 0
     public static let s: UInt16 = 1

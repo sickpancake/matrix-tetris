@@ -4,6 +4,7 @@ import MatrixTetrisCore
 final class MatrixRootView: NSView {
     private let engine = GameEngine()
     private let settingsStore: SettingsStore
+    private let soundManager: SoundManager
     private let savedGameStore = SavedGameStore()
     private let statsStore = StatsStore()
     private let appMetaStore = AppMetaStore()
@@ -27,6 +28,9 @@ final class MatrixRootView: NSView {
         },
         onResetSavedGame: { [weak self] in
             self?.resetSavedGameFromSettings()
+        },
+        onTestSounds: { [weak self] in
+            self?.soundManager.playTestSequence()
         }
     )
 
@@ -44,21 +48,26 @@ final class MatrixRootView: NSView {
     private var stats = StatsState.defaultState()
     private var meta = AppMetaState.defaultState()
     private var gameOverPanel: MatrixInfoPanel?
+    private var highScoreSoundPlayed = false
+    private var highScoreBaseline = 0
 
     private(set) var settings: SettingsState
     var isCapturingSettingsInput: Bool { settingsView.isCapturing }
 
     init(
         settingsStore: SettingsStore,
+        soundManager: SoundManager,
         onSettingsChanged: @escaping (SettingsState) -> Void,
         onClose: @escaping () -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.settingsStore = settingsStore
+        self.soundManager = soundManager
         self.onSettingsChanged = onSettingsChanged
         self.onClose = onClose
         self.onQuit = onQuit
         settings = settingsStore.load()
+        highScoreBaseline = settings.highScore
         stats = statsStore.load()
         meta = appMetaStore.load()
         boardView = TetrisBoardView(engine: engine)
@@ -170,7 +179,7 @@ final class MatrixRootView: NSView {
 
         boardView.translatesAutoresizingMaskIntoConstraints = false
         boardView.widthAnchor.constraint(equalToConstant: 250).isActive = true
-        boardView.heightAnchor.constraint(equalToConstant: 500).isActive = true
+        boardView.heightAnchor.constraint(equalToConstant: 520).isActive = true
 
         let sidebar = NSStackView()
         sidebar.orientation = .vertical
@@ -334,11 +343,14 @@ final class MatrixRootView: NSView {
         case .softDrop:
             changed = engine.softDrop()
         case .hardDrop:
-            engine.hardDrop()
-            changed = true
+            if engine.status == .running, engine.activePiece != nil {
+                engine.hardDrop()
+                changed = true
+            }
         case .pause:
+            let previousStatus = engine.status
             engine.togglePause()
-            changed = true
+            changed = engine.status != previousStatus
         case .restart:
             startNewGame()
             changed = true
@@ -350,6 +362,7 @@ final class MatrixRootView: NSView {
             hardDropStart: hardDropStart,
             hardDropTarget: hardDropTarget
         )
+        playActionSound(action, changed: changed, hardDropStart: hardDropStart)
         if changed, action == .softDrop, let softDropStart, let softDropEnd = engine.activePiece {
             boardView.triggerSoftDropTrail(from: softDropStart, to: softDropEnd)
         }
@@ -377,6 +390,7 @@ final class MatrixRootView: NSView {
         boardView.animationMode = settings.animationMode
         boardView.ghostOpacity = settings.ghostOpacity
         boardView.animationIntensities = settings.animationIntensities
+        soundManager.apply(settings)
         onSettingsChanged(settings)
         if detailScrollView.isHidden && !settingsView.isCapturing {
             focusGame()
@@ -388,6 +402,8 @@ final class MatrixRootView: NSView {
         engine.startNewGame()
         gravityAccumulator = 0
         statsRecordedForGame = false
+        highScoreSoundPlayed = false
+        highScoreBaseline = settings.highScore
         savedGameStore.clear()
         persistSessionIfNeeded()
         rebuildGameOverPanel()
@@ -401,6 +417,8 @@ final class MatrixRootView: NSView {
         }
         gravityAccumulator = 0
         statsRecordedForGame = false
+        highScoreSoundPlayed = false
+        highScoreBaseline = settings.highScore
         updateLabels()
         persistSessionIfNeeded()
         refreshStatsDetailIfVisible()
@@ -434,6 +452,7 @@ final class MatrixRootView: NSView {
         savedGameStore.clear()
         statsRecordedForGame = true
         rebuildGameOverPanel()
+        soundManager.play(.gameOver)
         return true
     }
 
@@ -444,6 +463,10 @@ final class MatrixRootView: NSView {
 
     private func updateHighScoreIfNeeded() -> Bool {
         guard engine.score > settings.highScore else { return false }
+        if !highScoreSoundPlayed, engine.score > highScoreBaseline {
+            soundManager.play(.highScore)
+            highScoreSoundPlayed = true
+        }
         settings.highScore = engine.score
         settingsStore.save(settings)
         onSettingsChanged(settings)
@@ -495,8 +518,17 @@ final class MatrixRootView: NSView {
         hardDropStart: ActivePiece? = nil,
         hardDropTarget: ActivePiece? = nil
     ) {
-        guard settings.animationMode == .subtle else { return }
         let cleared = engine.linesCleared - previousLines
+        if cleared > 0 {
+            soundManager.playLineClear(count: cleared)
+        } else if engine.spawnSerial != previousSpawnSerial, hardDropStart == nil {
+            soundManager.play(.lock)
+        }
+
+        guard settings.animationMode == .subtle else {
+            lastSpawnSerial = engine.spawnSerial
+            return
+        }
         if cleared > 0 {
             boardView.triggerLineClear(rows: engine.lastClearedRows, count: cleared)
         }
@@ -507,6 +539,33 @@ final class MatrixRootView: NSView {
             boardView.triggerSpawnPulse()
         }
         lastSpawnSerial = engine.spawnSerial
+    }
+
+    private func playActionSound(_ action: GameAction, changed: Bool, hardDropStart: ActivePiece?) {
+        switch action {
+        case .moveLeft, .moveRight:
+            if changed {
+                soundManager.play(.move)
+            }
+        case .rotateClockwise, .rotateCounterclockwise:
+            if changed {
+                soundManager.play(.rotate)
+            }
+        case .softDrop:
+            if changed {
+                soundManager.play(.softDrop)
+            }
+        case .hardDrop:
+            if hardDropStart != nil {
+                soundManager.play(.hardDrop)
+            }
+        case .pause:
+            if changed {
+                soundManager.play(engine.status == .paused ? .pause : .resume)
+            }
+        case .restart:
+            break
+        }
     }
 
     private func updateLabels() {
@@ -633,7 +692,7 @@ final class MatrixRootView: NSView {
     private func detailView(for mode: DetailMode) -> NSView {
         switch mode {
         case .settings:
-            settingsView.frame = NSRect(x: 0, y: 0, width: 188, height: 1_120)
+            settingsView.frame = NSRect(x: 0, y: 0, width: 188, height: 1_300)
             return settingsView
         case .firstRun:
             return MatrixInfoPanel(
@@ -677,7 +736,7 @@ final class MatrixRootView: NSView {
         case .changelog:
             return MatrixInfoPanel(
                 title: "WHAT'S NEW",
-                lines: AppInfo.v110Changelog,
+                lines: AppInfo.v120Changelog,
                 buttons: [
                     ("Continue", { [weak self] in self?.hideDetail() }),
                     ("Check Updates", { [weak self] in self?.openUpdates() })

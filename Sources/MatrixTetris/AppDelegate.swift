@@ -3,6 +3,7 @@ import MatrixTetrisCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsStore = SettingsStore()
+    private let soundManager = SoundManager()
     private var dropdownController: DropdownController?
     private var hotKeyManager: HotKeyManager?
     private var statusItem: NSStatusItem?
@@ -11,9 +12,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureStatusItem()
+        MatrixButton.soundHandler = { [weak self] in
+            self?.soundManager.play(.button)
+        }
 
         let dropdown = DropdownController(
             settingsStore: settingsStore,
+            soundManager: soundManager,
             onSettingsChanged: { [weak self] settings in
                 self?.applySettings(settings)
             },
@@ -44,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleFromStatusItem() {
+        soundManager.play(.button)
         dropdownController?.toggle(anchor: statusItem?.button, source: .statusItem)
     }
 
@@ -57,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applySettings(_ settings: SettingsState) {
+        soundManager.apply(settings)
+
         guard registeredHotKey != settings.hotKey || registeredHoldHotKey != settings.holdHotKey else {
             dropdownController?.repositionIfVisible(anchor: statusItem?.button)
             return

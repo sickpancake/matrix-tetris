@@ -30,6 +30,7 @@ APP_SOURCES=(
   "$ROOT/Sources/MatrixTetris/DropdownController.swift"
   "$ROOT/Sources/MatrixTetris/MatrixButton.swift"
   "$ROOT/Sources/MatrixTetris/MatrixInfoPanel.swift"
+  "$ROOT/Sources/MatrixTetris/SoundManager.swift"
   "$ROOT/Sources/MatrixTetris/MatrixRootView.swift"
   "$ROOT/Sources/MatrixTetris/TetrisBoardView.swift"
   "$ROOT/Sources/MatrixTetris/SettingsView.swift"
@@ -58,6 +59,7 @@ swiftc \
   -lMatrixTetrisCore \
   -framework AppKit \
   -framework Carbon \
+  -framework AVFoundation \
   -Xlinker -rpath \
   -Xlinker @executable_path/../Frameworks \
   "${APP_SOURCES[@]}" \
@@ -86,9 +88,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.1.0</string>
+  <string>1.2.0</string>
   <key>CFBundleVersion</key>
-  <string>110</string>
+  <string>120</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>

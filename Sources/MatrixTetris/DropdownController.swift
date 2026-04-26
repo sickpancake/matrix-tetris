@@ -10,6 +10,7 @@ final class DropdownController {
     private let panelSize = NSSize(width: 500, height: 580)
     private let toggleDebounce: TimeInterval = 0.18
     private let settingsStore: SettingsStore
+    private let soundManager: SoundManager
     private let onSettingsChanged: (SettingsState) -> Void
     private let onQuit: () -> Void
     private var localHotKeyMonitor: Any?
@@ -21,10 +22,12 @@ final class DropdownController {
 
     init(
         settingsStore: SettingsStore,
+        soundManager: SoundManager,
         onSettingsChanged: @escaping (SettingsState) -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.settingsStore = settingsStore
+        self.soundManager = soundManager
         self.onSettingsChanged = onSettingsChanged
         self.onQuit = onQuit
     }
@@ -75,6 +78,7 @@ final class DropdownController {
         installLocalHotKeyMonitor()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        soundManager.play(.dropdownOpen)
         rootView.focusGame()
     }
 
@@ -87,6 +91,7 @@ final class DropdownController {
         isHiding = true
         panel.orderOut(nil)
         isHiding = false
+        soundManager.play(.dropdownClose)
     }
 
     private func gameView() -> MatrixRootView {
@@ -95,6 +100,7 @@ final class DropdownController {
         }
         let view = MatrixRootView(
             settingsStore: settingsStore,
+            soundManager: soundManager,
             onSettingsChanged: onSettingsChanged,
             onClose: { [weak self] in
                 self?.hide()

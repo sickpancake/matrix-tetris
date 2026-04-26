@@ -26,6 +26,10 @@ final class SettingsView: NSView {
     private let softDropSlider = NSSlider(value: 7, minValue: 1, maxValue: 10, target: nil, action: nil)
     private let softDropValueLabel = NSTextField(labelWithString: "")
     private let speedScalingCheckbox = NSButton(checkboxWithTitle: "Keep speeding up by level", target: nil, action: nil)
+    private let soundEnabledCheckbox = NSButton(checkboxWithTitle: "Enable sound", target: nil, action: nil)
+    private let soundVolumeSlider = NSSlider(value: 6, minValue: 0, maxValue: 10, target: nil, action: nil)
+    private let soundVolumeValueLabel = NSTextField(labelWithString: "")
+    private let soundThemePopup = NSPopUpButton()
     private let ghostOpacitySlider = NSSlider(value: 4, minValue: 1, maxValue: 10, target: nil, action: nil)
     private let ghostOpacityValueLabel = NSTextField(labelWithString: "")
     private let animationPopup = NSPopUpButton()
@@ -37,15 +41,18 @@ final class SettingsView: NSView {
     private var captureTarget: CaptureTarget?
 
     private let onResetSavedGame: () -> Void
+    private let onTestSounds: () -> Void
 
     init(
         settings: SettingsState,
         onChange: @escaping (SettingsState) -> Void,
-        onResetSavedGame: @escaping () -> Void
+        onResetSavedGame: @escaping () -> Void,
+        onTestSounds: @escaping () -> Void
     ) {
         self.settings = settings
         self.onChange = onChange
         self.onResetSavedGame = onResetSavedGame
+        self.onTestSounds = onTestSounds
         super.init(frame: .zero)
         buildInterface()
         refresh()
@@ -175,6 +182,31 @@ final class SettingsView: NSView {
         configureCheckbox(speedScalingCheckbox)
         stack.addArrangedSubview(speedScalingCheckbox)
 
+        stack.addArrangedSubview(settingLabel("Sound"))
+        soundEnabledCheckbox.target = self
+        soundEnabledCheckbox.action = #selector(soundEnabledChanged)
+        configureCheckbox(soundEnabledCheckbox)
+        stack.addArrangedSubview(soundEnabledCheckbox)
+
+        stack.addArrangedSubview(settingLabel("Sound Theme"))
+        soundThemePopup.removeAllItems()
+        SoundTheme.allCases.forEach { soundThemePopup.addItem(withTitle: $0.label) }
+        soundThemePopup.target = self
+        soundThemePopup.action = #selector(soundThemeChanged)
+        stack.addArrangedSubview(soundThemePopup)
+
+        stack.addArrangedSubview(settingLabel("Sound Volume"))
+        let soundVolumeRow = sliderRow(
+            slider: soundVolumeSlider,
+            valueLabel: soundVolumeValueLabel,
+            action: #selector(soundVolumeChanged),
+            tickMarks: 11
+        )
+        stack.addArrangedSubview(soundVolumeRow)
+
+        let testSounds = MatrixButton(title: "Test Sounds", target: self, action: #selector(testSoundsPressed))
+        stack.addArrangedSubview(testSounds)
+
         stack.addArrangedSubview(settingLabel("Animations"))
         animationPopup.removeAllItems()
         AnimationMode.allCases.forEach { animationPopup.addItem(withTitle: $0.label) }
@@ -289,6 +321,12 @@ final class SettingsView: NSView {
         speedScalingCheckbox.state = settings.speedScalingEnabled ? .on : .off
         ghostOpacitySlider.integerValue = settings.ghostOpacity
         ghostOpacityValueLabel.stringValue = "\(settings.ghostOpacity)"
+        soundEnabledCheckbox.state = settings.soundEnabled ? .on : .off
+        soundVolumeSlider.integerValue = settings.soundVolume
+        soundVolumeValueLabel.stringValue = "\(settings.soundVolume)"
+        if let soundThemeIndex = SoundTheme.allCases.firstIndex(of: settings.soundTheme) {
+            soundThemePopup.selectItem(at: soundThemeIndex)
+        }
         if let animationIndex = AnimationMode.allCases.firstIndex(of: settings.animationMode) {
             animationPopup.selectItem(at: animationIndex)
         }
@@ -335,6 +373,32 @@ final class SettingsView: NSView {
         settings.speedScalingEnabled = speedScalingCheckbox.state == .on
         onChange(settings)
         statusLabel.stringValue = settings.speedScalingEnabled ? "Speed scaling enabled." : "Speed scaling disabled."
+    }
+
+    @objc private func soundEnabledChanged() {
+        settings.soundEnabled = soundEnabledCheckbox.state == .on
+        onChange(settings)
+        statusLabel.stringValue = settings.soundEnabled ? "Sound enabled." : "Sound muted."
+    }
+
+    @objc private func soundVolumeChanged() {
+        settings.soundVolume = min(max(soundVolumeSlider.integerValue, 0), 10)
+        soundVolumeValueLabel.stringValue = "\(settings.soundVolume)"
+        onChange(settings)
+        statusLabel.stringValue = "Sound volume saved."
+    }
+
+    @objc private func soundThemeChanged() {
+        let index = soundThemePopup.indexOfSelectedItem
+        guard SoundTheme.allCases.indices.contains(index) else { return }
+        settings.soundTheme = SoundTheme.allCases[index]
+        onChange(settings)
+        statusLabel.stringValue = "\(settings.soundTheme.label) selected."
+    }
+
+    @objc private func testSoundsPressed() {
+        onTestSounds()
+        statusLabel.stringValue = "Playing sound test."
     }
 
     @objc private func animationChanged() {

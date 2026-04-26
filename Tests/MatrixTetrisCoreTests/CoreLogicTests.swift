@@ -4,6 +4,8 @@ import MatrixTetrisCore
 public enum CoreLogicTests {
     public static func runAll() throws {
         try testMoveBounds()
+        try testNewPiecesSpawnAboveVisibleGrid()
+        try testSpawnedPiecesFallIntoVisibleGrid()
         try testGhostPieceFallsToLandingPoint()
         try testHardDropLocksPieceAndScores()
         try testLineClearScoring()
@@ -14,7 +16,7 @@ public enum CoreLogicTests {
         try testGameplayBindingsDropFunctionModifier()
         try testOldDefaultShortcutsMigrate()
         try testSettingsNormalizeNewSliders()
-        try testSettingsDecodeV110Defaults()
+        try testSettingsDecodeV120Defaults()
         try testSettingsPersistence()
         try testSavedGamePersistenceClearsGameOver()
         try testStatsPersistenceAndRecording()
@@ -30,6 +32,30 @@ public enum CoreLogicTests {
         engine.setActivePiece(ActivePiece(kind: .i, origin: GridPoint(x: 0, y: 0)))
         try expect(engine.moveLeft() == false, "piece at left wall should not move left")
         try expect(engine.moveRight() == true, "piece at left wall should move right")
+    }
+
+    private static func testNewPiecesSpawnAboveVisibleGrid() throws {
+        let engine = GameEngine(seed: 11)
+
+        guard let piece = engine.activePiece else {
+            throw TestFailure("new game should spawn an active piece")
+        }
+
+        try expect(piece.blocks.allSatisfy { $0.y < 0 }, "new pieces should spawn above the visible grid")
+        try expect(piece.blocks.contains { $0.y == -1 }, "new pieces should occupy the hidden spawn lane")
+    }
+
+    private static func testSpawnedPiecesFallIntoVisibleGrid() throws {
+        let engine = GameEngine(seed: 12)
+        let startingOrigin = engine.activePiece?.origin
+
+        _ = engine.tick()
+
+        guard let piece = engine.activePiece, let startingOrigin else {
+            throw TestFailure("active piece should still exist after first gravity tick")
+        }
+        try expect(piece.origin.y == startingOrigin.y + 1, "first gravity tick should move the spawned piece down")
+        try expect(piece.blocks.contains { $0.y >= 0 }, "spawned piece should enter the visible grid after falling")
     }
 
     private static func testGhostPieceFallsToLandingPoint() throws {
@@ -142,6 +168,10 @@ public enum CoreLogicTests {
         try expect(defaults.animationMode == .subtle, "animations should default to subtle")
         try expect(defaults.animationIntensities.softDrop == 4, "soft drop animation should default to a restrained intensity")
         try expect(defaults.animationIntensities.lineClear == 6, "line clear animation should have a visible default")
+        try expect(defaults.soundEnabled == true, "sound should default on")
+        try expect(defaults.soundVolume == 6, "sound volume should default to 6")
+        try expect(defaults.soundTheme == .matrixMinimal, "sound theme should default to Matrix Minimal")
+        try expect(SoundTheme.arcadePunchy.label == "Arcade Punchy", "arcade sound theme should format cleanly")
         try expect(ShortcutModifier.function.display == "Fn", "function modifier should display as Fn")
     }
 
@@ -168,18 +198,20 @@ public enum CoreLogicTests {
         settings.inputSensitivity = 40
         settings.softDropSpeed = -2
         settings.ghostOpacity = 50
+        settings.soundVolume = 50
         settings.animationIntensities = AnimationIntensityState(lineClear: -2, hardDrop: 11, softDrop: 50, spawn: 5, move: -8, landing: 3)
 
         let normalized = settings.normalized()
         try expect(normalized.inputSensitivity == 10, "movement sensitivity should clamp to 10")
         try expect(normalized.softDropSpeed == 1, "soft drop speed should clamp to 1")
         try expect(normalized.ghostOpacity == 10, "ghost opacity should clamp to 10")
+        try expect(normalized.soundVolume == 10, "sound volume should clamp to 10")
         try expect(normalized.animationIntensities.lineClear == 0, "animation intensities should clamp to 0")
         try expect(normalized.animationIntensities.hardDrop == 10, "animation intensities should clamp to 10")
         try expect(normalized.animationIntensities.softDrop == 10, "soft drop animation intensity should clamp to 10")
     }
 
-    private static func testSettingsDecodeV110Defaults() throws {
+    private static func testSettingsDecodeV120Defaults() throws {
         let data = try JSONEncoder().encode(SettingsState.defaultState())
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw TestFailure("settings should encode as a JSON object")
@@ -187,6 +219,9 @@ public enum CoreLogicTests {
         object.removeValue(forKey: "speedScalingEnabled")
         object.removeValue(forKey: "ghostOpacity")
         object.removeValue(forKey: "animationIntensities")
+        object.removeValue(forKey: "soundEnabled")
+        object.removeValue(forKey: "soundVolume")
+        object.removeValue(forKey: "soundTheme")
 
         let oldData = try JSONSerialization.data(withJSONObject: object)
         let decoded = try JSONDecoder().decode(SettingsState.self, from: oldData).normalized()
@@ -194,6 +229,9 @@ public enum CoreLogicTests {
         try expect(decoded.speedScalingEnabled == false, "missing speed scaling should default off")
         try expect(decoded.ghostOpacity == 4, "missing ghost opacity should use the v1.1 default")
         try expect(decoded.animationIntensities == .defaultState(), "missing animation intensities should use defaults")
+        try expect(decoded.soundEnabled == true, "missing sound enabled should default on")
+        try expect(decoded.soundVolume == 6, "missing sound volume should use the v1.2 default")
+        try expect(decoded.soundTheme == .matrixMinimal, "missing sound theme should use the v1.2 default")
     }
 
     private static func testSettingsPersistence() throws {
@@ -215,6 +253,9 @@ public enum CoreLogicTests {
         settings.ghostOpacity = 6
         settings.animationMode = .off
         settings.animationIntensities = AnimationIntensityState(lineClear: 2, hardDrop: 3, softDrop: 4, spawn: 5, move: 6, landing: 7)
+        settings.soundEnabled = false
+        settings.soundVolume = 3
+        settings.soundTheme = .arcadePunchy
         settings.hotKey = Shortcut(keyCode: MacKeyCode.t, modifiers: [.command, .shift])
         settings.holdHotKey = Shortcut(keyCode: MacKeyCode.grave, modifiers: [.control, .option])
         settings.keyBindings[.hardDrop] = Shortcut(keyCode: MacKeyCode.d, modifiers: [.option])
@@ -229,6 +270,9 @@ public enum CoreLogicTests {
         try expect(reloaded.ghostOpacity == 6, "ghost opacity should persist")
         try expect(reloaded.animationMode == .off, "animation mode should persist")
         try expect(reloaded.animationIntensities == settings.animationIntensities, "animation intensities should persist")
+        try expect(reloaded.soundEnabled == false, "sound enabled should persist")
+        try expect(reloaded.soundVolume == 3, "sound volume should persist")
+        try expect(reloaded.soundTheme == .arcadePunchy, "sound theme should persist")
         try expect(reloaded.hotKey == settings.hotKey, "hotkey should persist")
         try expect(reloaded.holdHotKey == Shortcut(keyCode: MacKeyCode.grave, modifiers: [.option]), "old default hold hotkey should migrate on reload")
         try expect(reloaded.keyBindings[.hardDrop] == settings.keyBindings[.hardDrop], "control binding should persist")

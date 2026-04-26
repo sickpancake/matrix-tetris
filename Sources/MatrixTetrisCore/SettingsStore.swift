@@ -1,10 +1,18 @@
 import Foundation
 
 public enum AppInfo {
-    public static let version = "1.1.0"
-    public static let build = "110"
+    public static let version = "1.2.0"
+    public static let build = "120"
     public static let displayVersion = "Matrix Tetris v\(version)"
     public static let latestReleaseURL = URL(string: "https://github.com/sickpancake/matrix-tetris/releases/latest")!
+
+    public static let v120Changelog = [
+        "Added original Matrix Minimal and Arcade Punchy sound themes.",
+        "Added sound settings for mute, master volume, theme, and test playback.",
+        "Added gameplay and UI sound cues for movement, drops, line clears, game over, buttons, and dropdown open/close.",
+        "Pieces now spawn above the visible grid and fall into play through a Matrix-styled spawn lane.",
+        "Updated app packaging and release metadata for v1.2.0."
+    ]
 
     public static let v110Changelog = [
         "Clicking outside the dropdown now auto-hides it without breaking shortcuts.",
@@ -34,6 +42,9 @@ public struct SettingsState: Codable, Equatable, Sendable {
     public var ghostOpacity: Int
     public var animationMode: AnimationMode
     public var animationIntensities: AnimationIntensityState
+    public var soundEnabled: Bool
+    public var soundVolume: Int
+    public var soundTheme: SoundTheme
     public var keyBindings: [GameAction: Shortcut]
 
     public init(
@@ -47,6 +58,9 @@ public struct SettingsState: Codable, Equatable, Sendable {
         ghostOpacity: Int = 4,
         animationMode: AnimationMode = .subtle,
         animationIntensities: AnimationIntensityState = .defaultState(),
+        soundEnabled: Bool = true,
+        soundVolume: Int = 6,
+        soundTheme: SoundTheme = .matrixMinimal,
         keyBindings: [GameAction: Shortcut]
     ) {
         self.highScore = highScore
@@ -59,6 +73,9 @@ public struct SettingsState: Codable, Equatable, Sendable {
         self.ghostOpacity = ghostOpacity
         self.animationMode = animationMode
         self.animationIntensities = animationIntensities
+        self.soundEnabled = soundEnabled
+        self.soundVolume = soundVolume
+        self.soundTheme = soundTheme
         self.keyBindings = keyBindings
     }
 
@@ -74,6 +91,9 @@ public struct SettingsState: Codable, Equatable, Sendable {
             ghostOpacity: 4,
             animationMode: .subtle,
             animationIntensities: .defaultState(),
+            soundEnabled: true,
+            soundVolume: 6,
+            soundTheme: .matrixMinimal,
             keyBindings: defaultKeyBindings
         )
     }
@@ -99,6 +119,7 @@ public struct SettingsState: Codable, Equatable, Sendable {
         copy.softDropSpeed = min(max(copy.softDropSpeed, 1), 10)
         copy.ghostOpacity = min(max(copy.ghostOpacity, 1), 10)
         copy.animationIntensities = copy.animationIntensities.normalized()
+        copy.soundVolume = min(max(copy.soundVolume, 0), 10)
         return copy
     }
 
@@ -113,6 +134,9 @@ public struct SettingsState: Codable, Equatable, Sendable {
         case ghostOpacity
         case animationMode
         case animationIntensities
+        case soundEnabled
+        case soundVolume
+        case soundTheme
         case keyBindings
     }
 
@@ -129,6 +153,9 @@ public struct SettingsState: Codable, Equatable, Sendable {
         ghostOpacity = try container.decodeIfPresent(Int.self, forKey: .ghostOpacity) ?? defaults.ghostOpacity
         animationMode = try container.decodeIfPresent(AnimationMode.self, forKey: .animationMode) ?? defaults.animationMode
         animationIntensities = try container.decodeIfPresent(AnimationIntensityState.self, forKey: .animationIntensities) ?? defaults.animationIntensities
+        soundEnabled = try container.decodeIfPresent(Bool.self, forKey: .soundEnabled) ?? defaults.soundEnabled
+        soundVolume = try container.decodeIfPresent(Int.self, forKey: .soundVolume) ?? defaults.soundVolume
+        soundTheme = try container.decodeIfPresent(SoundTheme.self, forKey: .soundTheme) ?? defaults.soundTheme
         keyBindings = try container.decodeIfPresent([GameAction: Shortcut].self, forKey: .keyBindings) ?? defaults.keyBindings
     }
 
@@ -144,6 +171,9 @@ public struct SettingsState: Codable, Equatable, Sendable {
         try container.encode(ghostOpacity, forKey: .ghostOpacity)
         try container.encode(animationMode, forKey: .animationMode)
         try container.encode(animationIntensities, forKey: .animationIntensities)
+        try container.encode(soundEnabled, forKey: .soundEnabled)
+        try container.encode(soundVolume, forKey: .soundVolume)
+        try container.encode(soundTheme, forKey: .soundTheme)
         try container.encode(keyBindings, forKey: .keyBindings)
     }
 

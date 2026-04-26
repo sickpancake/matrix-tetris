@@ -14,7 +14,8 @@ let package = Package(
             dependencies: ["MatrixTetrisCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
-                .linkedFramework("Carbon")
+                .linkedFramework("Carbon"),
+                .linkedFramework("AVFoundation")
             ]
         ),
         .testTarget(

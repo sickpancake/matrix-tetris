@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.0
+
+- Added original Matrix Minimal and Arcade Punchy sound themes.
+- Added sound settings for mute, master volume, theme selection, and test playback.
+- Added gameplay and UI sound cues for movement, rotation, drops, line clears, special chained Tetris clears, game over, buttons, and dropdown open/close.
+- Fixed piece spawning so new pieces start above the visible 10x20 grid and fall through a Matrix-styled spawn lane.
+- Updated release packaging and app bundle version to `1.2.0` / build `120`.
+
 ## v1.1.0
 
 - Fixed dropdown reopening after clicking outside by auto-hiding and preserving global shortcuts.

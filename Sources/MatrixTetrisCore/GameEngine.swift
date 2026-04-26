@@ -20,6 +20,7 @@ public final class GameEngine {
     private var rng: SeededGenerator
     private var bag: [TetrominoKind] = []
     private var lockTicks = 0
+    private let hiddenSpawnRows = 2
 
     public init(
         width: Int = 10,
@@ -341,7 +342,7 @@ public final class GameEngine {
         let kind = nextQueue.removeFirst()
         refillQueueIfNeeded()
 
-        let origin = GridPoint(x: width / 2 - 2, y: 0)
+        let origin = GridPoint(x: width / 2 - 2, y: -hiddenSpawnRows)
         let piece = ActivePiece(kind: kind, origin: origin)
         activePiece = piece
         spawnSerial += 1

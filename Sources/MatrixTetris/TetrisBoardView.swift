@@ -3,6 +3,7 @@ import MatrixTetrisCore
 
 final class TetrisBoardView: NSView {
     private let engine: GameEngine
+    private let spawnLaneRows = 2
     private var rainTick = 0
     private var lineClearFrames = 0
     private var clearedRows: [Int] = []
@@ -140,15 +141,23 @@ final class TetrisBoardView: NSView {
     }
 
     private func fittedBoardRect() -> NSRect {
-        let cellSize = floor(min(bounds.width / CGFloat(engine.width), bounds.height / CGFloat(engine.height)))
+        let cellSize = floor(min(bounds.width / CGFloat(engine.width), bounds.height / CGFloat(totalRenderedRows)))
         let width = cellSize * CGFloat(engine.width)
-        let height = cellSize * CGFloat(engine.height)
+        let height = cellSize * CGFloat(totalRenderedRows)
         return NSRect(
             x: bounds.midX - width / 2,
             y: bounds.midY - height / 2,
             width: width,
             height: height
         )
+    }
+
+    private var totalRenderedRows: Int {
+        engine.height + spawnLaneRows
+    }
+
+    private func cellSize(in rect: NSRect) -> CGFloat {
+        rect.width / CGFloat(engine.width)
     }
 
     private func drawRain(in rect: NSRect) {
@@ -183,13 +192,13 @@ final class TetrisBoardView: NSView {
         path.lineWidth = 0.5
         NSColor(calibratedRed: 0.07, green: 0.45, blue: 0.15, alpha: 0.45).setStroke()
 
-        let cell = rect.width / CGFloat(engine.width)
+        let cell = cellSize(in: rect)
         for x in 0...engine.width {
             let px = rect.minX + CGFloat(x) * cell
             path.move(to: NSPoint(x: px, y: rect.minY))
             path.line(to: NSPoint(x: px, y: rect.maxY))
         }
-        for y in 0...engine.height {
+        for y in 0...totalRenderedRows {
             let py = rect.minY + CGFloat(y) * cell
             path.move(to: NSPoint(x: rect.minX, y: py))
             path.line(to: NSPoint(x: rect.maxX, y: py))
@@ -214,7 +223,7 @@ final class TetrisBoardView: NSView {
     private func drawGhostPiece(in rect: NSRect) {
         guard let ghost = engine.ghostPiece(), ghost != engine.activePiece else { return }
         let alpha = 0.06 + CGFloat(clampedGhostOpacity) * 0.038
-        for block in ghost.blocks where block.y >= 0 {
+        for block in ghost.blocks where isRenderable(block) {
             drawCell(kind: ghost.kind, point: block, in: rect, alpha: alpha, strokeOnly: true)
         }
     }
@@ -222,7 +231,7 @@ final class TetrisBoardView: NSView {
     private func drawActivePiece(in rect: NSRect) {
         guard let piece = engine.activePiece else { return }
         let pulse = max(spawnPulseAlpha, movePulseAlpha)
-        for block in piece.blocks where block.y >= 0 {
+        for block in piece.blocks where isRenderable(block) {
             drawCell(kind: piece.kind, point: block, in: rect, alpha: 1, pulse: pulse)
         }
     }
@@ -240,14 +249,16 @@ final class TetrisBoardView: NSView {
     private func drawHardDropTrail(in rect: NSRect) {
         let scale = animationScale(for: .hardDrop)
         guard scale > 0, hardDropTrailFrames > 0 else { return }
-        let cell = rect.width / CGFloat(engine.width)
+        let cell = cellSize(in: rect)
         let alpha = CGFloat(hardDropTrailFrames) / 10.0
         outlineColor.withAlphaComponent((0.08 + 0.22 * alpha) * scale).setStroke()
         for segment in hardDropTrail {
-            guard segment.endY >= 0 else { continue }
+            let startY = min(max(segment.startY, -spawnLaneRows), engine.height - 1)
+            let endY = min(max(segment.endY, -spawnLaneRows), engine.height - 1)
+            guard endY >= -spawnLaneRows, startY < engine.height else { continue }
             let x = rect.minX + CGFloat(segment.x) * cell + cell / 2
-            let y1 = rect.maxY - CGFloat(max(segment.startY, 0)) * cell - cell / 2
-            let y2 = rect.maxY - CGFloat(segment.endY + 1) * cell + cell / 2
+            let y1 = centerY(forRow: startY, in: rect)
+            let y2 = centerY(forRow: endY, in: rect)
             let path = NSBezierPath()
             path.lineWidth = 1.2
             path.move(to: NSPoint(x: x, y: y1))
@@ -259,19 +270,21 @@ final class TetrisBoardView: NSView {
     private func drawSoftDropTrail(in rect: NSRect) {
         let scale = animationScale(for: .softDrop)
         guard scale > 0, softDropTrailFrames > 0 else { return }
-        let cell = rect.width / CGFloat(engine.width)
+        let cell = cellSize(in: rect)
         let alpha = CGFloat(softDropTrailFrames) / 12.0
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: rect).addClip()
         for segment in softDropTrail {
-            guard segment.endY >= 0 else { continue }
-            let topY = min(max(segment.startY, 0), max(segment.endY, 0))
-            let bottomY = max(max(segment.startY, 0), max(segment.endY, 0))
+            let topY = min(max(min(segment.startY, segment.endY), -spawnLaneRows), engine.height - 1)
+            let bottomY = min(max(max(segment.startY, segment.endY), -spawnLaneRows), engine.height - 1)
+            guard bottomY >= topY else { continue }
+            let topVisualY = topY + spawnLaneRows
+            let bottomVisualY = bottomY + spawnLaneRows
             let trailRect = NSRect(
                 x: rect.minX + CGFloat(segment.x) * cell + 3,
-                y: rect.maxY - CGFloat(bottomY + 1) * cell + 3,
+                y: rect.maxY - CGFloat(bottomVisualY + 1) * cell + 3,
                 width: cell - 6,
-                height: CGFloat(bottomY - topY + 1) * cell - 6
+                height: CGFloat(bottomVisualY - topVisualY + 1) * cell - 6
             )
 
             NSColor(calibratedRed: 0.16, green: 1, blue: 0.34, alpha: 0.03 * scale + 0.15 * alpha * scale).setFill()
@@ -300,18 +313,18 @@ final class TetrisBoardView: NSView {
     private func drawLandingPulse(in rect: NSRect) {
         let scale = animationScale(for: .landing)
         guard scale > 0, engine.activePieceIsGrounded, let piece = engine.activePiece else { return }
-        let cell = rect.width / CGFloat(engine.width)
         let progress = CGFloat(engine.lockProgress)
         let alpha = (0.10 + 0.32 * progress) * scale
         outlineColor.withAlphaComponent(alpha).setStroke()
 
-        for block in piece.blocks where block.y >= 0 {
-            let y = rect.maxY - CGFloat(block.y + 1) * cell + 2
-            let x = rect.minX + CGFloat(block.x) * cell + 4
+        for block in piece.blocks where isRenderable(block) {
+            let blockRect = cellRect(for: block, in: rect, inset: 2)
+            let y = blockRect.minY + 1
+            let x = blockRect.minX + 2
             let path = NSBezierPath()
             path.lineWidth = 1.1
             path.move(to: NSPoint(x: x, y: y - 1))
-            path.line(to: NSPoint(x: x + cell - 8, y: y - 1))
+            path.line(to: NSPoint(x: blockRect.maxX - 2, y: y - 1))
             path.stroke()
         }
     }
@@ -319,12 +332,12 @@ final class TetrisBoardView: NSView {
     private func drawLineClearFlash(in rect: NSRect) {
         let scale = animationScale(for: .lineClear)
         guard scale > 0, lineClearFrames > 0 else { return }
-        let cell = rect.width / CGFloat(engine.width)
+        let cell = cellSize(in: rect)
         let alpha = CGFloat(lineClearFrames) / 14.0
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: rect).addClip()
         for row in clearedRows {
-            let y = rect.maxY - CGFloat(row + 1) * cell
+            let y = rect.maxY - CGFloat(row + spawnLaneRows + 1) * cell
             let rowRect = NSRect(x: rect.minX, y: y, width: rect.width, height: cell)
             NSColor(calibratedRed: 0.24, green: 1, blue: 0.42, alpha: (0.04 + 0.14 * alpha) * scale).setFill()
             rowRect.fill()
@@ -364,13 +377,9 @@ final class TetrisBoardView: NSView {
         strokeOnly: Bool = false,
         pulse: CGFloat = 0
     ) {
-        let cell = rect.width / CGFloat(engine.width)
-        var cellRect = NSRect(
-            x: rect.minX + CGFloat(point.x) * cell + 2,
-            y: rect.maxY - CGFloat(point.y + 1) * cell + 2,
-            width: cell - 4,
-            height: cell - 4
-        )
+        guard isRenderable(point) else { return }
+        let cell = cellSize(in: rect)
+        var cellRect = cellRect(for: point, in: rect, inset: 2)
         if pulse > 0 {
             cellRect = cellRect.insetBy(dx: -1.2 * pulse, dy: -1.2 * pulse)
         }
@@ -384,6 +393,27 @@ final class TetrisBoardView: NSView {
             NSBezierPath(roundedRect: inner, xRadius: 1, yRadius: 1).stroke()
         }
         drawGlitchEdges(for: point, in: cellRect, alpha: alpha * (strokeOnly ? 0.55 : 1))
+    }
+
+    private func isRenderable(_ point: GridPoint) -> Bool {
+        point.x >= 0 && point.x < engine.width && point.y >= -spawnLaneRows && point.y < engine.height
+    }
+
+    private func cellRect(for point: GridPoint, in rect: NSRect, inset: CGFloat) -> NSRect {
+        let cell = cellSize(in: rect)
+        let visualY = point.y + spawnLaneRows
+        return NSRect(
+            x: rect.minX + CGFloat(point.x) * cell + inset,
+            y: rect.maxY - CGFloat(visualY + 1) * cell + inset,
+            width: cell - inset * 2,
+            height: cell - inset * 2
+        )
+    }
+
+    private func centerY(forRow row: Int, in rect: NSRect) -> CGFloat {
+        let cell = cellSize(in: rect)
+        let visualY = row + spawnLaneRows
+        return rect.maxY - CGFloat(visualY) * cell - cell / 2
     }
 
     private func drawGlitchEdges(for point: GridPoint, in rect: NSRect, alpha: CGFloat) {
